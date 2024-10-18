@@ -1,24 +1,29 @@
----
-title: "Security Policy"
-description: "The Netdata team maintains and adheres to a formal process any time a member of the community reports a security vulnerability."
-custom_edit_url: https://github.com/netdata/.github/edit/main/SECURITY.md
----
 
 
+This document describes how Netdata handles vulnerability reports. If you are a Netdata user, please also read our [security and privacy design](https://github.com/netdata/netdata/blob/master/docs/netdata-security.md).
 
 ## Supported Versions
 
 | Version | Supported |
 |-------  | --------- |
-| Latest  | Yes       |
+| Latest stable  | Yes       |
+| Latest nightly  | Yes       |
+
+Important security fixes always result in a patch release to the latest stable.
 
 ## Reporting a Vulnerability
 
 We're extremely grateful for security researchers and users that report vulnerabilities to Netdata Open Source Community. All reports are thoroughly investigated by a set of community volunteers.
 
-To make a report, please send an email to **security@netdata.cloud** with
+For possible vulnerabilities of the **FOSS agent**, [open a draft security advisory](https://github.com/netdata/netdata/security/advisories/new).
+
+For all other reports, please send an email to **security@netdata.cloud** with
 the vulnerability details and the details expected for [all Netdata bug
-reports](https://github.com/netdata/netdata/blob/c1f4c6cf503995cd4d896c5821b00d55afcbde87/.github/ISSUE_TEMPLATE/bug_report.md).
+reports](https://github.com/netdata/netdata/blob/master/.github/ISSUE_TEMPLATE/BUG_REPORT.yml).
+
+### Awards
+
+We reward newly reported vulnerabilities with Netdata swag. We do not offer monetary awards for vulnerability reports.
 
 ### When Should I Report a Vulnerability?
 
