@@ -1,0 +1,360 @@
+
+
+This section guides you through installing and securely connecting a new Agent to Netdata Cloud via the encrypted Agent-Cloud Link  ([ACLK](/docs/agent/src/aclk)). Connecting your Agent to your Space unlocks centralized monitoring, easier collaboration, and more.
+
+## Quick Start - New Installation
+
+**For new installations**, Netdata Cloud generates a command that you can execute on your Node to install and connect the Agent to your Space.
+
+You can find this command in three places in the UI:
+
+- **Space/Room settings**: Click the cogwheel (the bottom-left corner or next to the Room name at the top) and select "Nodes." Click the "+" button to add a new node.
+- [**Nodes tab**](/docs/dashboards-and-charts/nodes-tab): Click on the "Add nodes" button.
+- **Integrations page**: From the "Deploy" groups of integrations, select the OS or container environment your node runs on, and follow the instructions.
+
+## Connect Existing Agent
+
+**For Agents already installed**, you can connect them to your Space using one of three methods:
+
+### Method 1: Via UI (Recommended)
+
+**Best for:** Most users, easiest setup
+
+1. Open your Agent's local dashboard (normally under `IP:19999`)
+2. Sign in to your Netdata Cloud account
+3. Click the "Connect" button
+4. Follow the on-screen instructions to connect your Agent
+
+:::note
+
+**Verifying node ownership:** As part of the connection flow, your Agent's local dashboard displays a command to run directly on the machine whose Agent you are connecting — not on your local workstation or any other machine. The command reads a random session ID (a UUID) that the Agent generates at startup and writes to its library directory (`/var/lib/netdata/` by default, following the `lib` option under the `[directories]` section of `netdata.conf`). Copy the output and paste it back into the dialog. This proves you have administrative access to the node and prevents unauthorized claiming of machines you do not control.
+
+If your pasted UUID is rejected with `invalid key`, it is single-use: every claim attempt (including failed ones) regenerates a new one. See [Pasted verification UUID rejected as invalid key](#pasted-verification-uuid-rejected-as-invalid-key).
+
+:::
+
+### Method 2: Via Configuration File
+
+**Best for:** Automated deployments, multiple Agents
+
+Create `/INSTALL_PREFIX/etc/netdata/claim.conf`:
+
+```bash
+[global]
+   url = https://app.netdata.cloud
+   token = NETDATA_CLOUD_SPACE_TOKEN
+   rooms = ROOM_KEY1,ROOM_KEY2,ROOM_KEY3
+   proxy = http://username:password@myproxy:8080
+   insecure = no
+```
+
+:::info
+
+**File Permissions and Ownership:**
+
+The `claim.conf` file contains sensitive claiming tokens and must be properly secured:
+
+- **Required permissions (service installs):** `0640` (owner read/write, group read, no world access)
+- **Required ownership (service installs):** `root:netdata` (owner root, group netdata)
+
+The Netdata Cloud-generated claiming command automatically sets these permissions when creating or updating `claim.conf`. If you create the file manually, ensure it follows these same security standards to prevent unauthorized access to your claiming tokens.
+
+:::
+
+:::note
+
+On macOS with Homebrew installs, the `netdata` group does not exist. Set ownership to your own user and the `staff` group instead:
+
+```bash
+chown $(whoami):staff /usr/local/etc/netdata/claim.conf        # Intel
+chown $(whoami):staff /opt/homebrew/etc/netdata/claim.conf     # Apple Silicon
+chmod 0600 /usr/local/etc/netdata/claim.conf                    # Intel
+chmod 0600 /opt/homebrew/etc/netdata/claim.conf                 # Apple Silicon
+```
+
+This prevents the `chown: netdata: illegal group name` error.
+Using `0600` is acceptable for Homebrew installs because the Netdata Agent runs under the same user that owns the file.
+
+:::
+
+**Configuration Options:**
+
+|  option  | description                                                                            | required |
+|:--------:|:---------------------------------------------------------------------------------------|:--------:|
+|   url    | The Netdata Cloud base URL (defaults to `https://app.netdata.cloud`)                   |    no    |
+|  token   | The claiming token for your Netdata Cloud Space                                        |   yes    |
+|  rooms   | A comma-separated list of Rooms that the Agent will be added to                        |    no    |
+|  proxy   | See [proxy configuration](#proxy-configuration) below                                  |    no    |
+| insecure | A boolean (either `yes`, or `no`) and when set to `yes` it disables host verification. |    no    |
+
+**Applying the Configuration:**
+
+If the Agent is already running, you can either run `netdatacli reload-claiming-state` or [restart the Agent](/docs/agent/netdata-agent/start-stop-restart). Otherwise, the Agent connects when it starts.
+
+### Method 3: Via Environment Variables
+
+**Best for:** Container deployments, CI/CD pipelines
+
+You can configure Netdata using the following environment variables:
+
+| Option                     | Description                                                                                       | Required |
+|----------------------------|---------------------------------------------------------------------------------------------------|----------|
+| `NETDATA_CLAIM_URL`        | The Netdata Cloud base URL (defaults to `https://app.netdata.cloud`)                              | no       |
+| `NETDATA_CLAIM_TOKEN`      | The claiming token for your Netdata Cloud Space                                                   | yes      |
+| `NETDATA_CLAIM_ROOMS`      | A comma-separated list of Rooms that the Agent will be added to                                   | no       |
+| `NETDATA_CLAIM_PROXY`      | The URL of a proxy server to use for the connection                                               | no       |
+| `NETDATA_EXTRA_CLAIM_OPTS` | May contain a space-separated list of options. The option `-insecure` is the only currently used. | no       |
+
+### Connection Troubleshooting
+
+If the connection process fails, you can find the reason in daemon.log (search for "CLAIM") and the `cloud` section of `http://ip:19999/api/v3/info`.
+
+## Advanced Configuration
+
+### Proxy Configuration
+
+You can configure proxy settings for both the configuration file and environment variable methods.
+
+#### For Configuration File (claim.conf)
+
+You can set the `proxy` option at the `[global]` section in `claim.conf` to:
+
+- empty, to disable proxy configuration
+- `none` to disable proxy configuration
+- `env` to use the environment variable `http_proxy` (this is the default)
+- `http://[user:pass@]host:port`, to connect via a web proxy
+- `socks5[h]://[user:pass@]host:port`, to connect via a SOCKS5 proxy
+
+#### Environment Variable Proxy Settings
+
+Netdata uses the `http_proxy` environment variable only when you set the `proxy` option to `env` (which is the default). You can set the `http_proxy` environment variable to:
+
+- `http://[user:pass@]host:port`, to connect via an HTTP proxy
+- `socks5[h]://[user:pass@]host:port`, to connect via a SOCKS5 or SOCKS5H proxy
+
+#### Proxy Security Considerations
+
+:::note
+
+Netdata does not support secure connections to proxies. **Data between Netdata Agents and Netdata Cloud remains end-to-end encrypted** since the Agent establishes a TCP tunnel through the proxy (HTTP `CONNECT` for HTTP proxies, SOCKS5 `CONNECT` for SOCKS proxies) and handles all encryption directly, however initial Agent-to-proxy communication is not encrypted.
+
+:::
+
+**How End-to-End Encryption Works with Proxies:**
+
+1. **Proxy Connection**: The Agent connects to the configured proxy using a plain TCP connection.
+2. **TCP Tunneling Request**: The Agent asks the proxy to establish a TCP tunnel to the Netdata Cloud server (HTTP `CONNECT` for HTTP proxy, SOCKS5 `CONNECT` for SOCKS5/SOCKS5H).
+3. **Proxy Tunneling**: Once accepted, the proxy forwards raw TCP data in both directions without interpreting application-layer traffic.
+4. **Encrypted Communication**: The Agent then establishes a TLS/SSL connection through this tunnel directly with the Netdata Cloud server. All subsequent data (including the WebSocket handshake and MQTT protocol data) is encrypted end-to-end.
+
+:::note
+
+The proxy only sees encrypted TLS traffic flowing through the tunnel it established, never the decrypted content.
+
+:::
+
+:::info
+
+Netdata uses **two connection libraries**: **libcurl for claiming and MQTToWSoHTTPS for the actual Cloud connection**. While libcurl supports encrypted proxy connections, MQTToWSoHTTPS does not - so encrypted proxy connections will fail during the Cloud connection phase. The proxy configuration patterns above work for both libraries and provide end-to-end encryption for Netdata Cloud communication.
+
+For SOCKS proxies:
+
+- `socks5://` resolves target hostnames locally on the Agent and sends IP to the proxy.
+- `socks5h://` sends hostname to the proxy and resolves DNS remotely on the proxy side.
+
+:::
+
+## Manage Connections
+
+### Reconnect Agent
+
+<details>
+<summary><strong>Linux-based Installations</strong></summary><br/>
+
+To remove a node from your Space in Netdata Cloud, delete the `cloud.d/` directory in your Netdata library directory.
+
+```bash
+cd /var/lib/netdata   # Replace with your Netdata library directory, if not /var/lib/netdata/
+sudo rm -rf cloud.d/
+```
+
+:::note
+
+The Agent will be **re-claimed automatically** if the environment variables or `claim.conf` exist when you restart the Agent.
+
+:::
+
+This node will no longer have access to the credentials it used when connecting to Netdata Cloud via the ACLK.
+
+</details>
+
+<details>
+<summary><strong>Docker-based Installations</strong></summary><br/>
+
+To remove a node from your Space and connect it to another, follow these steps:
+
+1. **Enter the running container** you wish to remove from your Space
+
+   ```bash
+   docker exec -it CONTAINER_NAME sh
+   ```
+
+   Replace `CONTAINER_NAME` with either the container's name or ID.
+
+2. **Delete the connection files**
+
+   ```bash
+   rm -rf /var/lib/netdata/cloud.d/
+   rm /var/lib/netdata/registry/netdata.public.unique.id 
+   ```
+
+3. **Stop and remove the container**
+
+   **Docker CLI:**
+
+    ```bash
+    docker stop CONTAINER_NAME
+    docker rm CONTAINER_NAME
+    ```
+
+   Replace `CONTAINER_NAME` with either the container's name or ID.
+
+   **Docker Compose:**  
+   Inside the directory that has the `docker-compose.yml` file, run:
+
+    ```bash
+    docker compose down
+    ```
+
+   **Docker Swarm:**  
+   Run the following, and replace `STACK` with your Stack's name:
+
+    ```bash
+    docker stack rm STACK
+    ```
+
+4. **Connect to new Space**
+
+    Go to your new Space, copy the installation command with the new claim token and run it. If you're using a `docker-compose.yml` file, you will have to overwrite it with the new claiming token. The node should now appear online in that Space.
+
+</details>
+
+### `cloud.d` Directory Contents
+
+When an Agent is claimed to Netdata Cloud, the `cloud.d/` directory (located in your Netdata library directory, typically `/var/lib/netdata/cloud.d/`) stores the credentials and identity information for the Agent-Cloud Link (ACLK). The directory typically includes the following core files:
+
+| File          | Description                                                                                                      |
+|---------------|------------------------------------------------------------------------------------------------------------------|
+| `cloud.conf`  | Primary Cloud configuration file, including the canonical `claimed_id` and other ACLK settings                   |
+| `private.pem` | RSA private key for ACLK authentication                                                                          |
+| `public.pem`  | RSA public key for ACLK authentication                                                                           |
+| `claimed_id`  | Legacy file duplicating the `claimed_id` from `cloud.conf`, kept mainly for backwards compatibility and fallback |
+
+In addition to these, depending on your configuration and features in use, you may also see the following optional files:
+
+- `token` / `rooms`: Used for split-file auto-claiming workflows.
+- `trusted.pem` / `cloud_fullchain.pem`: Optional custom CA bundle files used to validate the TLS connection to Netdata Cloud.
+
+:::note
+
+The `claimed_id` is separate from the Machine GUID. It uniquely identifies the connection between the Agent and Cloud, while the Machine GUID identifies the node itself.
+
+:::
+
+For detailed explanations of all identity types and their relationships, see [Node Identities](/docs/agent/learn/node-identities).
+
+### Regenerate Claiming Token
+
+You may need to revoke your previous Claiming Token and generate a new one for security reasons.
+
+:::note
+
+Only **Administrators** of a Space in Netdata Cloud can regenerate Claim Tokens.
+
+:::
+
+**Steps:**
+
+1. Navigate to [any screen](#quick-start---new-installation) containing the Connection command
+2. Click the "Regenerate token" button. This action invalidates your previous token and generates a new one
+
+## Troubleshooting
+
+### Check Connection Status
+
+If you're having trouble connecting a node, this may be because the [ACLK](/docs/agent/src/aclk) cannot connect to Cloud.
+
+**Method 1: Web Interface**
+
+With the Netdata Agent running, visit `http://NODE:19999/api/v3/info` in your browser, replacing `NODE` with the IP address or hostname of your Agent. The returned JSON contains a section called `cloud` with helpful information to diagnose any issues you might be having with the ACLK or connection process.
+
+**Method 2: Command Line**
+
+You can also run `sudo netdatacli aclk-state` to get some diagnostic information about ACLK:
+
+```bash
+ACLK Available: Yes
+ACLK Implementation: Next Generation
+New Cloud Protocol Support: Yes
+Claimed: Yes
+Claimed Id: 53aa76c2-8af5-448f-849a-b16872cc4ba1
+Online: Yes
+Used Cloud Protocol: New
+```
+
+Use these keys and the information below to troubleshoot the ACLK.
+
+### Common Issues
+
+#### Pasted verification UUID rejected as invalid key
+
+**Applies to:** [Method 1: Via UI](#method-1-via-ui-recommended).
+
+**Problem:** The claiming dialog verifies server ownership by asking you to run a command on the Agent and paste back the UUID it prints. The prefix depends on the install — `sudo cat` for service installs, `docker exec netdata cat` for Docker, and `more` on Windows — over the `netdata_random_session_id` file:
+
+```bash
+sudo cat /var/lib/netdata/netdata_random_session_id                  # service installs (default path)
+docker exec netdata cat /var/lib/netdata/netdata_random_session_id   # Docker (default container name)
+more <VARLIB>\netdata_random_session_id                              # Windows (Command Prompt)
+```
+
+Use the exact command the dialog shows — it fills in the correct path for your install. The `docker exec netdata` form assumes the default container name (`--name=netdata`); adjust it if your container uses a different name. After pasting the UUID, the claim is rejected with `invalid key`, even though the value was copied exactly.
+
+**Why this happens:** The UUID in `netdata_random_session_id` is **single-use**. The Agent generates a new UUID and overwrites the file on **every** claim attempt — including failed ones — as a brute-force defense. The UUID is regenerated on the `invalid key` response, the `invalid parameters` response, and on every attempt that passes those checks (whether the claiming call to Cloud then succeeds or fails). So if any claim attempt occurred after you read the file (an earlier submit with a wrong or missing Space token/Rooms, a retry from another browser tab, or a concurrent claiming script), the value you copied is already stale.
+
+**Solution:** Read the file **again** to get the current UUID and submit once, in the same pass, with a valid Space token and Rooms — making sure no other claim attempt regenerates the UUID first:
+
+1. Re-run the command from the dialog (the value is different each time).
+2. Copy the new UUID.
+3. Paste it with the correct Space token and Rooms, then submit once. Do not re-submit the old value or retry from a second tab — each failed attempt invalidates the current UUID again.
+
+#### kickstart: unsupported Netdata installation
+
+**Problem:** If you run the kickstart script and get the following error `Existing install appears to be handled manually or through the system package manager.` you most probably installed Netdata using an unsupported package.
+
+**Solution:** Check our [installation section](/docs/agent/packaging/installer) to find the proper way of installing Netdata on your system.
+
+#### kickstart: Failed to write new machine GUID
+
+**Problem:** You might encounter this error if you run the Netdata kickstart script without sufficient permissions:
+
+```bash
+Failed to write new machine GUID. Please make sure you have rights to write to /var/lib/netdata/registry/netdata.public.unique.id.
+```
+
+**Solution:** To resolve this issue, you have two options:
+
+1. Run the script with root privileges.
+2. Run the script with the user that runs the Netdata Agent.
+
+#### Connecting to Cloud on older distributions (Ubuntu 14.04, Debian 8, CentOS 6)
+
+**Problem:** If you're running an older Linux distribution or one that has reached EOL, such as Ubuntu 14.04 LTS, Debian 8, or CentOS 6, your Agent may not be able to securely connect to Netdata Cloud due to an outdated version of OpenSSL. These old versions of OpenSSL cannot perform [hostname validation](https://wiki.openssl.org/index.php/Hostname_validation), which helps securely encrypt SSL connections.
+
+**Solution:** We recommend you reinstall Netdata with a [static build](/docs/agent/packaging/makeself), which uses an up-to-date version of OpenSSL with hostname validation enabled.
+
+:::warning
+
+If you choose to continue using the **outdated version of OpenSSL**, your node will still connect to Netdata Cloud, but **with hostname verification disabled**. Without verification, your Netdata Cloud connection could be vulnerable to man-in-the-middle attacks.
+
+:::
