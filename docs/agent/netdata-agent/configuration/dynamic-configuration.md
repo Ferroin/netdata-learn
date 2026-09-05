@@ -1,0 +1,368 @@
+
+
+## Overview
+
+:::important
+
+Netdata Cloud paid plan is required for creating, editing, testing, enabling, disabling, or removing configurations. On Community plans, you can still list configurable items.
+
+:::
+
+:::tip
+
+**What You'll Learn**
+
+How to access the Dynamic Configuration Manager and understand its key features for managing your monitoring infrastructure.
+
+:::
+
+The Dynamic Configuration Manager allows you to configure collectors and alerts directly through the Netdata UI. This feature enables you to:
+
+- **Create, test, and deploy configurations** for one or more nodes directly within the UI
+- **Eliminate manual command-line edits and node access**, enhancing your workflow efficiency
+
+:::note
+
+**Cloud Connection and Security**
+
+Your nodes using Dynamic Configuration Manager require a connection to Netdata Cloud. This ensures proper permission handling and data security.
+
+:::
+
+**Key Features:**
+
+| Feature                                  | Purpose                                                                                       |
+|------------------------------------------|-----------------------------------------------------------------------------------------------|
+| Configure collector parameters           | Set up data collection settings directly in the UI                                            |
+| Fill out configuration forms             | Use guided interfaces instead of editing config files                                         |
+| Test configurations before deployment    | Validate settings to prevent errors                                                           |
+| Create alert templates                   | Build reusable alert definitions                                                              |
+| Apply templates to instances or contexts | Target specific services or apply broadly                                                     |
+| Deploy to multiple nodes simultaneously  | Ensure consistency across your infrastructure                                                 |
+| Manage Health tab alert templates        | Create configurations for templates and individual alerts that apply to instances or contexts |
+
+:::info
+
+To understand what actions you can perform based on your role, refer to the [Role-Based Access documentation](/docs/agent/netdata-cloud/authentication-and-authorization/role-based-access-model).
+
+:::
+
+## Quick Access Methods
+
+:::tip
+
+**What You'll Learn**
+
+Four different ways to access the Dynamic Configuration Manager, each optimized for different workflows.
+
+:::
+
+You can access the Dynamic Configuration Manager in multiple ways:
+
+<details>
+<summary><strong>From Any Chart</strong></summary><br/>
+
+1. Navigate to any chart on your dashboard
+2. Click the **Alert icon (bell icon)** at the top of the chart
+3. Choose to edit an existing alert or create a new one
+4. Configure your alert parameters and submit changes
+
+<br/>
+</details>
+
+<details>
+<summary><strong>From the Alerts Tab</strong></summary><br/>
+
+1. Go to the **Alerts tab** on your Netdata dashboard
+2. Locate the alert you want to modify and click on it
+3. Adjust thresholds and parameters to match your needs
+4. Save your changes
+
+<br/>
+</details>
+
+<details>
+<summary><strong>From the Integrations Section</strong></summary><br/>
+
+1. Navigate to the **Integrations section** on your dashboard
+2. Browse through the available collectors
+3. Click on the **Configure** button for the collector you want to set up
+4. Once configured, they will start collecting data as specified
+
+<br/>
+</details>
+
+<details>
+<summary><strong>From Space Settings</strong></summary><br/>
+
+1. Go to **Space Settings** on your Dashboard
+2. Navigate to the **Configurations** section
+3. Explore, create, and edit collector, health and logs configurations
+
+<br/>
+</details><br/>
+
+:::tip
+
+Currently available for go.d collectors, you can configure collectors straight from the Integrations section. This means you can quickly identify what Netdata can monitor and set up your configurations in one go.
+
+:::
+
+## Getting Started
+
+:::tip
+
+**What You'll Learn**
+
+How to use each of the four access methods with practical step-by-step workflows.
+
+:::
+
+:::tip
+
+To help you get started with the Dynamic Configuration Manager, try using the Netdata demo environment to explore these capabilities firsthand and see how they can enhance your monitoring workflows.
+
+:::
+
+### Step-by-Step Walkthrough
+
+<details>
+<summary><strong>Creating Alerts from Charts</strong></summary><br/>
+
+Learn more about this access method: [From Any Chart](#quick-access-methods)
+
+1. Navigate to the chart (context) you want to create an alert for
+2. Click on the Alert icon (bell icon) on top of the chart to edit an existing alert or create a new one
+3. Configure your alert parameters, such as rules, instances, thresholds, etc.
+4. Submit your changes
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Managing Alerts from the Alerts Tab</strong></summary><br/>
+
+Learn more about this access method: [From the Alerts Tab](#quick-access-methods)
+
+1. Go to the Alerts tab on your Netdata dashboard
+2. Locate the alert you wish to modify and click on it
+3. Adjust the thresholds and other parameters to match your specific needs
+4. Save the changes
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Configuring Collectors from Integrations</strong></summary><br/>
+
+Learn more about this access method: [From the Integrations Section](#quick-access-methods)
+
+1. Navigate to the Integrations section on the dashboard
+2. Browse through the available collectors
+3. Click on the **Configure** button for the collector you want to set up
+4. Once configured, they will start collecting data as specified
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Managing Configurations from Space Settings</strong></summary><br/>
+
+Learn more about this access method: [From Space Settings](#quick-access-methods)
+
+1. Go to **Space Settings** on your Dashboard
+2. Navigate to the **Configurations** section
+3. Explore, create, and edit collector, health and logs configurations
+
+<br/>
+</details>
+
+:::note
+
+**How UI changes take effect, and what they change on disk**
+
+When you submit an alert or collector change from the UI, it is applied on the node **immediately** — there is no scheduled synchronization to wait for. Your edit is saved as a dynamic configuration that **overrides** the node's built-in alert definitions. Those stock files stay untouched and are simply superseded by your UI edit.
+
+:::
+
+## Collectors
+
+:::tip
+
+**What You'll Learn**
+
+How modules and jobs work together to collect data, and the specific actions you can perform on each.
+
+:::
+
+### Module
+
+A module represents a specific data collector, such as Apache, MySQL, or Redis. Think of modules as templates for data collection.
+
+Each module can have multiple jobs, which are unique configurations of that template tailored to your specific needs.
+
+**Module Management Actions:**
+
+| Action             | Description                                                                                                               |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------|
+| **Add job**        | Create new configuration instances (jobs) for a particular module                                                         |
+| **Enable/Disable** | Disabling a module deactivates all currently running jobs and prevents any future jobs from being created for that module |
+
+### Job
+
+A job represents a running instance of a module with a specific configuration. Think of it as a customized data collection task based on a module template.
+
+**Job Source Types:**
+
+Every job has a designated "source type" indicating its origin:
+
+| Source Type               | Description                                                                       |
+|---------------------------|-----------------------------------------------------------------------------------|
+| **Stock**                 | Pre-installed with Netdata and provides basic data collection for common services |
+| **User**                  | Created from user-defined configuration files on the node                         |
+| **Discovered**            | Automatically generated by Netdata upon discovering a service running on the node |
+| **Dynamic Configuration** | Managed and created through the Dynamic Configuration Manager                     |
+
+**Job Management Actions:**
+
+| Category          | Action             | Description                                                                                                                                                                                |
+|-------------------|--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Configuration** | **Edit**           | Modify an existing job's configuration                                                                                                                                                     |
+| **Configuration** | **Test**           | Validate newly created or edited configurations before applying them permanently                                                                                                           |
+| **Management**    | **Enable/Disable** | Control the job's activity. Disabling a running job stops data collection                                                                                                                  |
+| **Management**    | **Restart**        | Restart a job's data collection, useful if a job encounters a "Failed" state. Upon restart, you'll see a notification with the failure message                                             |
+| **Management**    | **Remove**         | Delete a job configuration entirely. Note that you can only remove jobs created through Dynamic Configuration. Other job types originate from files on the node and cannot be deleted here |
+
+:::important
+
+Only jobs created through Dynamic Configuration can be removed. Other job types originate from files on the node and can’t be deleted through the UI.
+
+:::
+
+## Multi-Node Deployment
+
+:::tip
+
+**What You'll Learn**
+
+How to deploy configurations to multiple nodes simultaneously, saving time and ensuring consistency across your infrastructure.
+
+:::
+
+The Dynamic Configuration Manager allows you to submit configurations to multiple nodes with just one click, eliminating the need to configure each node individually.
+
+:::note
+For teams using Infrastructure as Code solutions, the Dynamic Configuration Manager allows you to construct and copy configurations easily, integrating them into your IaC workflows. This ensures your configurations are consistent and reproducible across different environments.
+:::
+
+### Multi-Node Deployment Process
+
+<details>
+<summary><strong>Deploy to Multiple Nodes</strong></summary><br/>
+
+1. Configure your collectors or alerts using any of the methods described above
+2. Use the multi-node feature to select your target nodes
+3. Submit your configuration, and it will be applied to all selected nodes instantly
+
+<br/>
+</details><br/>
+
+:::note
+
+This feature is particularly valuable for managing large infrastructures where manual configuration of individual nodes would be time-consuming and error-prone.
+
+:::
+
+## Troubleshooting
+
+### HTTP 412 Error When Editing Alert Configurations
+
+If you receive an **HTTP 412 error** with a message like "Request failed with status 412" when editing alert configurations, this indicates an **authentication issue**, not a schema validation error.
+
+:::important
+
+In Netdata, HTTP 412 is used to indicate that an authorization bearer token was required but was not present in the request. This differs from the generic HTTP 412 "Precondition Failed" response.
+
+:::
+
+**Common causes:**
+
+1. **Bearer token protection enabled** - Your Agent requires Cloud authentication for API access
+2. **Cloud connection lost** - Agent disconnected from Netdata Cloud
+3. **Session expired** - Bearer token has expired (tokens expire after 24 hours)
+4. **Missing browser authentication state** - Your browser is no longer sending a valid Cloud bearer token with the request
+
+**Resolution steps:**
+
+1. **Verify claim and Cloud connection**: Check `http://IP:19999/api/v3/info` and inspect the `cloud` section. Use `cloud.status` to verify whether the Agent is connected to Netdata Cloud, and if it is not `online`, inspect `cloud.reason` for the failure details.
+2. **Re-authenticate**: Log out and log back into Netdata Cloud to refresh your bearer token.
+3. **Verify bearer token protection setting**: If enabled in `netdata.conf`, ensure you're accessing the Agent through a Cloud-authenticated session.
+4. **Check permissions only if you get HTTP 403**: If the request changes from HTTP 412 to HTTP 403 after re-authenticating, ensure you have Admin or Manager role in the space containing the Agent.
+
+For more information, see [Secure Your Netdata Agent with Bearer Token Protection](/docs/agent/netdata-agent/configuration/secure-your-netdata-agent-with-bearer-token).
+
+### Forbidden (HTTP 403) Error When Accessing Configuration Manager
+
+If you see **"forbidden"** (HTTP 403) when opening configuration details or creating, editing, testing, enabling, disabling, or removing configurations in the Configuration Manager, one of the following restrictions is blocking the action.
+
+:::important
+
+Only users with an **Admin** or **Manager** role on a **paid plan** can perform Dynamic Configuration actions beyond listing. Users without Dynamic Configuration permissions and all users on the Community plan will receive **"forbidden"** for those actions.
+
+:::
+
+**Common causes:**
+
+1. **Insufficient role** — Only Admin and Manager roles can perform Dynamic Configuration actions such as **View**, **Add**, **Update**, **Enable/Disable**, **Remove**, and **Test**. Troubleshooters, Observers, and Billing users can still use **List All**, but they will receive **"forbidden"** for actions beyond listing.
+2. **Community (free) plan limitation** — A paid plan is required for all Dynamic Configuration Manager actions except **List All**. Users on the Community plan will see **"forbidden"** when attempting any action beyond listing.
+
+**Resolution steps:**
+
+1. **Check your assigned role**: Go to **Space Settings → Users** and verify your role. If you are not an Admin or Manager, ask a Space Admin to upgrade your role. See the [Role-Based Access Model documentation](/docs/agent/netdata-cloud/authentication-and-authorization/role-based-access-model) for the full permissions table.
+2. **Verify your subscription plan**: If you are on the Community plan, [upgrade to a paid plan](https://www.netdata.cloud/pricing/) or ask a Space Admin to do so. A paid plan is required for all Dynamic Configuration actions except **List All**.
+
+### Disabled Alert Template Still Appears on Nodes
+
+The Dynamic Configuration Manager has a function to bulk-apply configurations to multiple nodes. Without it, any change you do is for the specific node you have selected. So, if you want to disable an alert template (for example `10min_cpu_usage`) for X desired nodes, you need to target all of them.
+
+**Solution:**
+
+Apply the disable to each node that is actually raising the alert. The recommended approach is to use the [Multi-Node Deployment](#multi-node-deployment) feature to select every node still raising the alert and push the disabled configuration to all of them at once.
+
+<details>
+<summary>Alternative: configure each node manually (optional)</summary>
+
+If you prefer not to use Multi-Node Deployment, disable the alert directly in each desired node's local health configuration:
+
+- In `netdata.conf`, under the `[health]` section, exclude the alert name and restart the Agent:
+  ```conf
+  [health]
+      enabled alarms = !10min_cpu_usage *
+  ```
+  [Restarting the Agent](/docs/agent/netdata-agent/start-stop-restart) is required because `netdatacli reload-health` reloads health configuration files but does not reload `netdata.conf`.
+- Alternatively, edit the corresponding `health.d/*.conf` file (for example `health.d/cpu.conf`), comment out the alert definition, and run `netdatacli reload-health`.
+
+For the full manual configuration syntax, see [How to Disable or Silence Alerts](/docs/agent/src/health/reference#how-to-disable-or-silence-alerts).
+
+</details>
+
+### "No items to enable" when enabling a single alert
+
+Alerts in Netdata have two separate on/off controls:
+
+1. **Alert level** — Each alert has its own on/off switch, controlled from the **Alerts tab** or **Space Settings → Configurations → Health**.
+2. **Rule level** — Each alert contains one or more **rules**. Each rule has its own enable/disable control, visible only after clicking **Edit** on the alert.
+
+When an alert is switched off, its rules cannot run. If you try to enable its rules while the alert itself is off, Netdata shows **"No items to enable"** — turn the alert on first.
+
+**To enable only specific rules within an alert:**
+
+1. Open the alert from the **Alerts tab** or **Space Settings → Configurations → Health**.
+2. Click **Edit**.
+3. Enable the rules you want to run, and disable every other rule. Leave at least one rule enabled — if all rules are disabled, enabling the alert has no effect.
+4. Click **Submit**.
+5. **Enable** the alert. Only the rules you left enabled will run — depending on how broadly the alert applies, this can activate a large number of alerts at once. This is normal.
+
+If you would rather keep the alert fully enabled, disable the specific alerts you don't want using [Multi-Node Deployment](#multi-node-deployment) to push the change across all affected nodes at once. For the manual, file-based alternative, see [Disabled Alert Template Still Appears on Nodes](#disabled-alert-template-still-appears-on-nodes).
+
+[Read more](/docs/agent/developer-and-contributor-corner/dyncfg) on developing with dynamic configuration.

@@ -1,0 +1,63 @@
+
+
+Netdata AI is a set of analysis and troubleshooting capabilities built into Netdata Cloud. It turns high‑fidelity telemetry into explanations, timelines, and recommendations so teams resolve issues faster and document decisions with confidence.
+
+![Netdata AI overview](https://raw.githubusercontent.com/netdata/docs-images/refs/heads/master/netdata-cloud/netdata-ai/netdata-ai.png)
+
+## Why it’s accurate and powerful
+
+- Per‑second granularity: Every Netdata Agent collects metrics at 1‑second resolution, preserving short‑lived spikes and transient behavior.
+- On‑device ML: Unsupervised models run on every agent, continuously scoring anomalies for every metric with zero configuration.
+- Evidence‑based correlation: Netdata’s correlation engine relates metrics, anomalies, and events across nodes to form defendable root‑cause hypotheses.
+- Full context: Reports and investigations combine statistical summaries, anomaly timelines, alert history, and dependency information.
+
+## Capabilities
+
+### 1) Conversations
+
+[Real-Time Conversations](/docs/agent/netdata-ai/conversations) provide a live, interactive dialogue with Netdata AI. Ask rapid-fire questions, explore hypotheses, and get instant visualizations (Live Exhibits) embedded directly in the chat. Use Conversations for the exploratory phase of troubleshooting, then pivot to Investigations for comprehensive reports.
+
+### 2) Insights
+
+Generates on‑demand, professional reports (see [AI Insights](/docs/agent/ml-ai/ai-insights)):
+
+- [Infrastructure Summary](/docs/agent/netdata-ai/insights/infrastructure-summary) – incident timelines, health, and prioritized actions
+- [Performance Optimization](/docs/agent/netdata-ai/insights/performance-optimization) – bottlenecks, contention, and concrete tuning steps
+- [Capacity Planning](/docs/agent/netdata-ai/insights/capacity-planning) – growth projections and exhaustion dates
+- [Anomaly Analysis](/docs/agent/netdata-ai/insights/anomaly-analysis) – forensics on unusual behavior and likely causes
+
+Each report includes an executive summary, evidence, and actionable recommendations. Reports are downloadable as PDFs and shareable with your team. You can also [schedule reports](/docs/agent/netdata-ai/insights/scheduled-reports).
+
+### 3) Investigations
+
+Ask open‑ended questions ("what changed here?", "why did X regress?") and get a researched answer using your telemetry — see the [Investigations overview](/docs/agent/netdata-ai/investigations/index). Launch from Insights → New Investigation. Create [Custom Investigations](/docs/agent/netdata-ai/investigations/custom-investigations) and set up [Scheduled Investigations](/docs/agent/netdata-ai/investigations/scheduled-investigations).
+
+### 4) Troubleshooting
+
+- [Alert Troubleshooting](/docs/agent/troubleshooting/troubleshoot) – one‑click analysis for any alert with a root‑cause hypothesis and supporting signals
+- [Anomaly Advisor](/docs/agent/ml-ai/anomaly-advisor) – interactive exploration of how anomalies propagate across systems
+- [Metric Correlations](/docs/agent/metric-correlations) – focus on the most relevant charts for any time window
+
+See the [Troubleshooting overview](/docs/agent/netdata-ai/troubleshooting/index).
+
+### 5) Alerts Automation
+
+[Alerts Automation](/docs/agent/netdata-ai/alerts-automation/alerts-automation) uses AI to suggest, generate, and test alert configurations. Describe what you want to monitor in plain English, and the AI generates the complete alert definition, tests it against historical data to show how it would have triggered, and lets you deploy it to your nodes — no need to learn alert configuration syntax or manually tune thresholds.
+
+### 6) Anomaly Detection
+
+Local, unsupervised ML runs on every agent, learning normal behavior and scoring anomalies for all metrics in real time. Anomaly ribbons appear on charts, and historical scores are stored alongside metrics for analysis. See [ML Anomaly Detection](/docs/agent/ml-ai/ml-anomaly-detection/ml-anomaly-detection), configure via [ML Configuration](/docs/agent/src/ml/ml-configuration), and review methodology in [ML Accuracy](/docs/agent/ml-ai/ml-anomaly-detection/ml-accuracy).
+
+### 7) MCP (Model Context Protocol)
+
+Connect AI clients to Netdata’s MCP server to bring live observability into natural‑language workflows and optional automation. Options include [MCP](/docs/agent/netdata-ai/mcp), [Chat with Netdata](/docs/agent/netdata-ai/mcp/ai-chat-netdata), and [Supported AI Clients](/docs/agent/netdata-ai/mcp/mcp-clients/ai-devops-copilot) like Claude Desktop, Cursor, VS Code, JetBrains IDEs, Claude Code, Gemini CLI, and the Netdata Web Client. Netdata Cloud can also act as an MCP client that connects to your own tools — see [MCP Connections](/docs/agent/netdata-ai/mcp/mcp-connections).
+
+## Usage and credits
+
+- Eligible Spaces receive 10 free AI credits; each Insights report, investigation, or alert troubleshooting run consumes 1 AI credit.
+- Additional usage is available via AI Credits. Track usage from Settings → Usage & Billing → AI Credits.
+
+## Note
+
+- No model training on your data: information is used only to generate your outputs.
+- Despite our best efforts to eliminate inaccuracies, AI responses may sometimes be incorrect, please think carefully before making important changes or decisions.
