@@ -1,0 +1,1252 @@
+
+
+## Overview
+
+A **chart template** defines _how a collector's metrics are organized into charts_ in the Netdata dashboard.
+
+> [!NOTE]
+> Chart templates are declarative YAML files. You describe **what** to chart, and the engine handles creating, updating, and removing chart instances at runtime.
+
+It tells the chart engine:
+
+- which **metrics** to include
+- how to **group** them into charts and families
+- how to **name** and **scale** dimensions
+- how to create **per-instance charts** (e.g., one chart per host, per disk, per user)
+
+Each collector has a single `charts.yaml` file that describes all its charts.
+
+> [!TIP]
+> Groups can be nested to **any depth**. Family paths, context namespaces, and metric scopes compose automatically as you nest — no need to repeat prefixes. See [groups](#4-groups) for the full composition rules and examples.
+
+### How Chart Templates Work
+
+When a collector runs, the chart engine:
+
+1. Reads the collector's `charts.yaml` file.
+2. Compiles it into an immutable program (validates and resolves static defaults).
+3. On each collection cycle, matches incoming metrics against dimension selectors and resolves omitted algorithms from
+   runtime metric kinds.
+4. Creates chart instances dynamically based on instance identity labels.
+5. Updates dimension values every cycle; removes stale instances based on lifecycle policy.
+
+**Template Lifecycle**
+
+```text
+                     charts.yaml
+                         |
+                         v
+              ┌─────────────────────┐
+              │  Decode & Validate  │  strict YAML parse + semantic checks
+              └──────────┬──────────┘
+                         v
+              ┌─────────────────────┐
+              │  Compile (engine)   │  selector parsing, static defaults,
+              │                     │  context/family/ID composition
+              └──────────┬──────────┘
+                         v
+              ┌─────────────────────┐
+              │  Runtime (per cycle)│  match series → resolve algorithms →
+              │                     │  create/update/remove charts and dimensions
+              └─────────────────────┘
+```
+
+### Example: Complete Chart Template
+
+The example below shows a single template that covers all common metric kinds:
+gauge, counter, histogram, summary, and stateset. Inline comments explain each field.
+
+```yaml
+version: v1                           # schema version (only "v1" supported)
+context_namespace: myapp              # prefix for all chart contexts → myapp.<group context>.<chart context>
+
+groups:
+  # ── Gauge: point-in-time values (algorithm: absolute) ──────────────
+  - family: Resources
+    metrics: # metrics visible to dimension selectors in this group
+      - memory_used_bytes
+      - memory_total_bytes
+      - cpu_usage_percent
+    charts:
+      - id: memory_usage
+        title: Memory Usage
+        context: memory_usage         # final context: myapp.memory_usage
+        units: bytes
+        type: stacked                 # line (default), area, stacked, heatmap
+        algorithm: absolute           # absolute = raw value; incremental = rate (value - prev) / interval
+        instances:
+          by_labels: [host]           # one chart per unique "host" label value
+        dimensions:
+          - selector: memory_used_bytes
+            name: used                # static dimension name
+          - selector: memory_total_bytes
+            name: total
+            options:
+              hidden: true            # collected but not drawn (useful for % calculations)
+
+      - id: cpu_usage
+        title: CPU Usage
+        context: cpu_usage
+        units: percentage
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: cpu_usage_percent
+            name: used
+            options:
+              divisor: 100            # raw value in basis points → divide by 100 for percent
+              float: true             # use floating-point precision
+
+  # ── Counter: monotonically increasing values (algorithm: incremental) ──
+  - family: Traffic
+    metrics:
+      - http_requests_total
+      - bytes_received
+      - bytes_sent
+    charts:
+      - id: http_requests
+        title: HTTP Requests
+        context: http_requests
+        units: requests/s
+        algorithm: incremental        # engine computes rate: (current - previous) / interval
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: http_requests_total
+            name_from_label: method   # dynamic name: each unique label value becomes a dimension
+            # e.g., method="GET" → dim "GET", method="POST" → dim "POST"
+
+      - id: bandwidth
+        title: Network Bandwidth
+        context: bandwidth
+        units: kilobits/s
+        type: area
+        algorithm: incremental
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: bytes_received
+            name: in
+            options:
+              multiplier: 8           # bytes → bits
+              divisor: 1000           # bits → kilobits
+          - selector: bytes_sent
+            name: out
+            options:
+              multiplier: -8          # negative = drawn below zero line (bidirectional chart)
+              divisor: 1000
+
+  # ── Histogram: bucketed distribution (flattened into _bucket, _count, _sum) ──
+  - family: Latency
+    metrics:
+      - request_duration_seconds_bucket
+      - request_duration_seconds_count
+      - request_duration_seconds_sum
+    charts:
+      - id: request_duration_buckets
+        title: Request Duration Buckets
+        context: request_duration_buckets
+        units: observations/s
+        type: heatmap                 # histogram bucket charts are forced to heatmap
+        algorithm: incremental        # histogram range buckets are counter-like totals
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: request_duration_seconds_bucket
+            # no name, no name_from_label → engine infers dimension names
+            # from the "le" (less-than-or-equal) label automatically:
+            # le="0.005" → dim "0.005", le="0.01" → dim "0.01", etc.
+
+      - id: request_rate
+        title: Request Rate
+        context: request_rate
+        units: requests/s
+        algorithm: incremental
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: request_duration_seconds_count
+            name: requests
+
+  # ── Summary: quantile distribution (flattened into quantile values, _count, _sum) ──
+  - family: Response Time
+    metrics:
+      - response_time_seconds
+      - response_time_seconds_count
+      - response_time_seconds_sum
+    charts:
+      - id: response_time_quantiles
+        title: Response Time Quantiles
+        context: response_time_quantiles
+        units: seconds
+        algorithm: absolute           # quantile values are gauges, not counters
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: response_time_seconds
+            # no name, no name_from_label → engine infers dimension names
+            # from the "quantile" label automatically:
+            # quantile="0.5" → dim "0.5", quantile="0.99" → dim "0.99", etc.
+            options:
+              float: true
+
+  # ── StateSet: named boolean states (exactly one active at a time) ──
+  - family: Health
+    metrics:
+      - service_status
+    charts:
+      - id: service_health
+        title: Service Health Status
+        context: service_health
+        units: state
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: service_status
+            # no name, no name_from_label → engine infers dimension names
+            # from the metric-name label (service_status=<value>) automatically:
+            # service_status="ready" → dim "ready", service_status="degraded" → dim "degraded", etc.
+```
+
+**What this template produces** — if the collector reports metrics for 2 hosts (`host="web-1"`, `host="web-2"`), the engine creates **2 instances of every chart** (one per host). The histogram bucket chart is a heatmap with one non-overlapping range dimension per `le` boundary, the summary chart gets one per quantile, and the stateset chart gets one per state — all named automatically by the engine.
+
+## Template Structure
+
+Every `charts.yaml` follows this structure:
+
+```yaml
+version: <schema version>
+context_namespace: <context prefix>
+engine: <engine policy>
+groups:
+  - family: <family name>
+    context_namespace: <context segment>
+    metrics: <available metrics>
+    chart_defaults: <inheritable defaults>
+    charts: <chart definitions>
+    groups: <nested groups>
+```
+
+| Section                                       | Purpose                                            |
+|-----------------------------------------------|----------------------------------------------------|
+| [**version**](#1-version)                     | Schema version (must be `v1`).                     |
+| [**context_namespace**](#2-context_namespace) | Top-level prefix for chart context paths.          |
+| [**engine**](#3-engine)                       | Engine-level policy (selectors, autogeneration).   |
+| [**groups**](#4-groups)                       | Recursive chart groups — the core of the template. |
+
+> [!NOTE]
+> Some consumers embed a chart template as a **single group** instead of a full spec — for example a
+> [Prometheus profile](/docs/agent/src/go/plugin/go.d/collector/prometheus/profile-format)'s `template:` key holds one item of
+> the `groups` list above (written without the leading dash), and the collector supplies `version` and `engine` itself.
+> All group and chart fields documented below apply unchanged; the spec-level `version`, top-level `context_namespace`,
+> and `engine` fields do not. Use the consumer's own policy surface for engine behavior. Prometheus profiles expose
+> `autogen.selector` at the profile root to constrain fallback charts inside that profile's `match` scope while
+> retaining samples; use the job `selector` or a relabeling `drop` rule when the samples themselves must be discarded.
+
+---
+
+## Field Reference
+
+### 1. version
+
+Schema version. Currently only `v1` is supported. Defaults to `v1` if omitted.
+
+```yaml
+version: v1
+```
+
+### 2. context_namespace
+
+Top-level prefix for all chart context paths in the template. Combined with group-level `context_namespace` and chart `context` to form the final context.
+
+```yaml
+context_namespace: mysql
+```
+
+**Context composition** — the final chart context is built by joining all context parts with `.`:
+
+```
+<top context_namespace>.<group context_namespace>...<chart.context>
+```
+
+For example:
+
+| Level                         | Value               |
+|-------------------------------|---------------------|
+| Top-level `context_namespace` | `mysql`             |
+| Group `context_namespace`     | _(empty)_           |
+| Chart `context`               | `queries`           |
+| **Resulting context**         | **`mysql.queries`** |
+
+**Autogen charts** — the **top-level** `context_namespace` also prefixes the contexts of charts
+created by `engine.autogen` (metrics not matched by any template dimension), joined with the same
+`.`. Group-level `context_namespace` does not apply to autogen, since unmatched series belong to
+no group. For example, with top-level `context_namespace: nagios`, an unmatched metric
+`check_load` autogenerates the context `nagios.check_load`.
+
+The autogen context is `context_namespace` joined with the **full metric name**, and a metric's name
+includes any `SnapshotMeter("<prefix>")` prefix (`<prefix>.<instrument>`). So a non-empty meter prefix
+**stacks after** `context_namespace` — e.g. `context_namespace: app` with `SnapshotMeter("app")` and
+instrument `foo` yields `app.app.foo`. When you set `context_namespace`, write metrics with
+`SnapshotMeter("")` so the namespace has a single source; do not also encode it in the meter prefix.
+
+### 3. engine
+
+Template-level policy that controls metric filtering and autogeneration.
+
+```yaml
+engine:
+  selector:
+    allow: ["cpu_*", "memory_*"]
+    deny: ["cpu_guest_*"]
+  autogen:
+    enabled: true
+    rules:
+      - scope: "app_*"
+        selector:
+          deny: ["app_debug_*", "app_internal_*"]
+    expire_after_success_cycles: 50
+```
+
+| Field                                 | Type          | Default     | Description                                                                                   |
+|---------------------------------------|---------------|-------------|-----------------------------------------------------------------------------------------------|
+| `selector.allow`                      | array[string] | _(empty)_   | Include only metrics matching these patterns (simple patterns: `*` and `?` wildcards).        |
+| `selector.deny`                       | array[string] | _(empty)_   | Exclude metrics matching these patterns (simple patterns: `*` and `?` wildcards).             |
+| `autogen.enabled`                     | bool          | `false`     | Create charts for metrics not matched by any template dimension.                              |
+| `autogen.rules`                       | array[rule]   | _(absent)_  | Conditional fallback selectors. Each rule requires `scope` and non-empty `selector`.          |
+| `autogen.max_type_id_len`             | int           | `0` (=1200) | Max full `type.id` length. Must be `0` or `>= 4`.                                             |
+| `autogen.expire_after_success_cycles` | uint64        | `0`         | Remove autogenerated charts not seen for N successful cycles (`0` = never).                   |
+
+**When to use autogen**: For collectors like Nagios plugins where the set of metrics is unpredictable and user-defined. The engine creates a chart for every unmatched metric automatically.
+
+Each `autogen.rules[]` item has this shape:
+
+```yaml
+scope: "app_*"               # Netdata simple-pattern expression over source families
+selector:
+  allow: ['{environment="prod"}']
+  deny: ["app_debug_*"]
+```
+
+An absent, null, or empty `autogen.rules` value means no conditional fallback rules.
+
+Rules run only after every authored dimension selector has had a chance to route the flattened series. A rule applies
+when `scope` matches the resolved source family. If no rule applies, fallback is permitted. When several rules apply,
+every selector must accept the series; one rejection suppresses fallback, independent of rule order. Within one
+selector, `allow` defaults to all, `deny` defaults to none, and the result is `allow AND NOT deny`.
+
+The selector receives the source family as `__name__` plus the flattened series' complete label view. Histogram and
+summary components use their base family (`foo`, not `foo_bucket`/`foo_sum`/`foo_count`) and preserve structural labels
+such as `le` and `quantile`; StateSet state labels and MeasureSet `measure_field` are also visible. Therefore, an
+authored heatmap for `foo_bucket` still materializes when a rule rejects `foo`, while unmatched `foo_sum` and
+`foo_count` fallback charts are suppressed. Rules change chart generation only; the series remains in the metric
+store.
+
+**Example: Nagios collector with autogeneration**
+
+```yaml
+version: v1
+context_namespace: nagios
+engine:
+  autogen:
+    enabled: true
+    expire_after_success_cycles: 50
+groups:
+  - family: Job
+    context_namespace: job
+    groups:
+      - family: Execution
+        metrics:
+          - nagios.job.execution_state
+          - nagios.job.execution_duration
+        charts:
+          - id: job_execution_state
+            title: Job Execution State
+            context: execution_state
+            units: state
+            instances:
+              by_labels: [nagios_job]
+            dimensions:
+              - selector: nagios.job.execution_state
+          - id: job_execution_duration
+            title: Execution Duration
+            context: execution_duration
+            units: seconds
+            instances:
+              by_labels: [nagios_job]
+            dimensions:
+              - selector: nagios.job.execution_duration
+                name: duration
+                options:
+                  float: true
+```
+
+Explicitly defined charts (like `execution_state`) use the template. Any _other_ metrics the Nagios plugin emits get auto-charted by the engine.
+
+### 4. groups
+
+Groups organize charts into a hierarchy that can be nested to **any depth**. A root group may be a transparent container
+without its own `family`; every nested group defines a **family** segment. Groups can also declare **metrics** in scope
+and contain **charts** and/or nested **groups**.
+
+Nesting serves three purposes:
+
+1. **Family composition** — each level's `family` is joined with `/`, producing Netdata's hierarchical family structure automatically (the UI renders `/`-separated families as navigable levels).
+2. **Context composition** — each level's `context_namespace` is joined with `.`, so you write short context leaves instead of long prefixed strings.
+3. **Metric scoping** — metrics declared in a group are inherited by all descendants, so you declare once at the appropriate level.
+
+```yaml
+groups:
+  - family: <family name>
+    context_namespace: <optional context segment>
+    metrics:
+      - <metric_name>
+    chart_defaults:
+      priority: <int>
+      label_promotion: [<label>, ...]
+      instances:
+        by_labels: [<label>, ...]
+        optional_by_labels: [<label>, ...]
+    charts:
+      - <chart definition>
+    groups:
+      - <nested group>
+```
+
+| Field               | Type          | Required | Description                                                                         |
+|---------------------|---------------|----------|-------------------------------------------------------------------------------------|
+| `family`            | string        | root: no; nested: **yes** | Family segment. An omitted root is transparent; nested groups compose the hierarchy. |
+| `context_namespace` | string        | no       | Context segment appended to inherited context namespace.                            |
+| `metrics`           | array[string] | no       | Metrics visible to dimension selectors in this group and descendants.               |
+| `chart_defaults`    | object        | no       | Inheritable defaults for descendant charts (see [chart_defaults](#chart_defaults)). |
+| `charts`            | array         | no       | Chart definitions (see [charts](#5-charts)).                                        |
+| `groups`            | array         | no       | Nested groups (recursive).                                                          |
+
+**Family composition** — group families compose hierarchically. The final chart family is built by joining all group `family` segments and the chart's own `family` (if set) with `/`:
+
+| Level                | Family value                            |
+|----------------------|-----------------------------------------|
+| Root group           | `Storage Engine`                        |
+| Nested group         | `InnoDB`                                |
+| Nested group         | `Buffer Pool`                           |
+| **Resulting family** | **`Storage Engine/InnoDB/Buffer Pool`** |
+
+A root group may omit `family` when it exists only to share metric scope, context namespace, or chart defaults. Its
+children then become the top-level family sections. Nested groups must always provide a nonblank family. A chart directly
+under a transparent root must provide `chart.family`, so every emitted chart still has a nonblank effective family.
+
+Here is a real-world nesting example showing how family and context compose at each level:
+
+```yaml
+# context_namespace: mysql (set at top level)
+groups: # family                                context
+  - family: Storage Engine                # Storage Engine                        (inherited)
+    groups:
+      - family: InnoDB                    # Storage Engine/InnoDB                 (inherited)
+        groups:
+          - family: Buffer Pool           # Storage Engine/InnoDB/Buffer Pool
+            charts:
+              - context: pages            #                                       → mysql.pages
+          - family: I/O                   # Storage Engine/InnoDB/I/O
+            charts:
+              - context: bandwidth        #                                       → mysql.bandwidth
+      - family: MyISAM                    # Storage Engine/MyISAM
+        charts:
+          - context: key_blocks           #                                       → mysql.key_blocks
+```
+
+Without nesting, you would repeat `Storage Engine/InnoDB/` in every chart's family and `mysql.` in every context. Nesting eliminates that repetition and makes the structure self-documenting.
+
+> [!WARNING]
+> Dimensions can only reference metrics declared in their group or any ancestor group. Referencing a metric not in scope produces a validation error.
+
+**Metric scoping** — this prevents accidental cross-references and keeps templates self-documenting:
+
+```yaml
+groups:
+  - family: Database
+    metrics:
+      - queries_total        # visible to all charts in this group and nested groups
+    groups:
+      - family: Cache
+        metrics:
+          - cache_hits        # visible only in this group and its descendants
+        charts:
+          - title: Cache Performance
+            context: cache
+            units: hits/s
+            dimensions:
+              - selector: cache_hits      # OK — declared in this group
+                name: hits
+              - selector: queries_total   # OK — inherited from parent group
+                name: queries
+```
+
+#### chart_defaults
+
+Inheritable chart configuration applied to all descendant charts in the group subtree. Useful when a chart family shares
+one ordering priority, instance identity, or label promotion policy.
+
+| Field             | Type          | Description                              |
+|-------------------|---------------|------------------------------------------|
+| `priority`        | int           | Default chart ordering priority.         |
+| `label_promotion` | array[string] | Default non-identity chart-label policy. |
+| `instances`       | object        | Default instance identity policy.        |
+
+> [!NOTE]
+> **Inheritance rules**: nearest group default wins (child overrides parent), chart-local field overrides inherited default, and list/object fields replace the inherited field wholesale — there is no deep merge or append.
+
+Priority uses zero as its unset sentinel. An omitted or zero group/chart value inherits the nearest nonzero group default;
+use an explicit `70000` when a child subtree or chart must reset to engine-default ordering.
+
+`label_promotion` has three distinct states at either level:
+
+- omitted: automatically promote labels whose values intersect across every series contributing to the chart;
+- non-empty: promote only the listed non-identity labels when their values intersect;
+- `[]`: promote no non-identity labels, leaving only instance identity labels on the chart.
+
+An inherited explicit empty list remains explicit; it does not fall back to automatic intersection.
+
+**Example: Azure Monitor — all charts share the same instance identity**
+
+```yaml
+groups:
+  - family: Azure Key Vault
+    context_namespace: key_vault
+    chart_defaults:
+      priority: 100
+      label_promotion: [resource_name, resource_group, region]
+      instances:
+        by_labels: [resource_uid]
+    charts:
+      # Every chart below inherits priority, instances, and label_promotion
+      # without repeating them.
+      - id: availability
+        title: Azure Key Vault Availability
+        context: availability
+        units: percentage
+        dimensions:
+          - selector: key_vault.availability_average
+            name: average
+      - id: api_latency
+        title: Azure Key Vault API Latency
+        context: api_latency
+        units: milliseconds
+        dimensions:
+          - selector: key_vault.service_api_latency_average
+            name: average
+```
+
+Without `chart_defaults`, you would need to repeat `priority`, `instances`, and `label_promotion` on every chart.
+
+### 5. charts
+
+A chart defines a single visualization in the Netdata dashboard.
+
+```yaml
+charts:
+  - id: <chart ID>
+    title: <chart title>
+    family: <optional family leaf>
+    context: <chart context>
+    units: <units string>
+    algorithm: <absolute|incremental>
+    aggregation: <sum|min|max|avg>
+    type: <line|area|stacked|heatmap>
+    priority: <int>
+    label_promotion: [<label>, ...]
+    instances:
+      by_labels: [<label>, ...]
+      optional_by_labels: [<label>, ...]
+    lifecycle:
+      max_instances: <int>
+      expire_after_cycles: <int>
+      dimensions:
+        max_dims: <int>
+        expire_after_cycles: <int>
+    dimensions:
+      - <dimension definition>
+```
+
+| Field             | Type          | Required | Default                | Description                                                                  |
+|-------------------|---------------|----------|------------------------|------------------------------------------------------------------------------|
+| `id`              | string        | no       | derived from `context` | Base chart ID. If omitted, derived by replacing `.` with `_` in `context`.   |
+| `title`           | string        | **yes**  |                        | Chart title shown in the dashboard.                                          |
+| `family`          | string        | no       |                        | Optional chart-level family leaf, appended to the group family.              |
+| `context`         | string        | **yes**  |                        | Chart context leaf. Combined with context namespaces.                        |
+| `units`           | string        | **yes**  |                        | Chart units (e.g., `queries/s`, `bytes`, `percentage`).                      |
+| `algorithm`       | string        | no       | runtime metric kind    | `absolute` or `incremental`. If omitted, resolved per dimension from the matched series kind. |
+| `aggregation`     | string        | no       | `sum`                  | Reducer applied to every dimension in the chart.                             |
+| `type`            | string        | no       | `line`                 | `line`, `area`, `stacked`, or `heatmap`. Histogram bucket charts are forced to `heatmap`. |
+| `priority`        | int           | no       | from `chart_defaults`, otherwise `70000` | Chart ordering priority. Zero is unset/inherit; use `70000` to reset an inherited priority. |
+| `label_promotion` | array[string] | no       | from `chart_defaults`  | Non-identity chart-label policy: omitted uses automatic intersection, a non-empty list is an explicit allowlist, and `[]` promotes none. Entries must be non-empty label keys. |
+| `instances`       | object        | no       | from `chart_defaults`  | Instance identity policy (see [instances](#instances)).                      |
+| `lifecycle`       | object        | no       |                        | Instance/dimension cap and expiry (see [lifecycle](#lifecycle)).             |
+| `dimensions`      | array         | **yes**  |                        | At least one dimension required (see [dimensions](#6-dimensions)).           |
+
+Chart and dimension identity labels are immutable routing inputs: changing one creates a new chart or dimension
+ID. Promoted labels are non-identity metadata. They are the intersection across every routed contributor to the chart,
+including contributors with no source labels. Therefore, one unlabeled contributor makes the promoted intersection empty.
+When the effective intersection changes, chartengine updates the existing chart with a complete replacement label set;
+it does not recreate the chart or its dimensions.
+
+> [!TIP]
+> Omit `algorithm` for the normal case. The engine uses `incremental` for a matched runtime counter and `absolute` for a
+> gauge or any other kind, regardless of the metric name. Set it explicitly only when every dimension in the chart must
+> intentionally override its runtime kind.
+
+Histogram `_bucket` dimensions receive non-overlapping range bucket totals from
+`metrix.ReadFlatten()`. The `le` label remains the bucket upper bound, but the
+value is no longer cumulative with earlier buckets. Histogram bucket dimensions
+are named by the bare `le` value and ordered numerically, with `+Inf` last.
+
+> [!WARNING]
+> Different runtime kinds may share a chart when they render as distinct dimensions. If several series collapse into the
+> same rendered dimension, omit `algorithm` only when those series have the same runtime kind. Otherwise set an explicit
+> chart algorithm so the aggregated dimension has one intentional wire interpretation. Chartengine does not diagnose a
+> violation at runtime; authoring validation and real-path tests must reject it rather than depend on first-observed
+> metadata.
+
+The runtime kind of a live metric identity must remain stable while its dimension is materialized. Changing the kind does
+not redefine an existing Netdata dimension; its creation-time wire algorithm remains until the dimension expires and is
+recreated.
+
+**Example: MySQL queries — incremental counters displayed as rates**
+
+```yaml
+charts:
+  - id: queries
+    title: Queries
+    context: queries
+    units: queries/s
+    algorithm: incremental
+    dimensions:
+      - selector: queries
+        name: queries
+      - selector: questions
+        name: questions
+      - selector: slow_queries
+        name: slow_queries
+```
+
+**Example: MySQL bandwidth — bidirectional area chart with unit conversion**
+
+```yaml
+charts:
+  - id: net
+    title: Bandwidth
+    context: net
+    units: kilobits/s
+    type: area
+    algorithm: incremental
+    dimensions:
+      - selector: bytes_received
+        name: in
+        options:
+          multiplier: 8
+          divisor: 1000
+      - selector: bytes_sent
+        name: out
+        options:
+          multiplier: -8       # negative = below zero line
+          divisor: 1000
+```
+
+#### instances
+
+Instance identity determines how series are grouped into chart instances. When multiple series share the same instance
+identity label values, they appear as dimensions on the same chart instance.
+
+> [!TIP]
+> Without `instances`, there is one chart instance (all matching series land on the same chart). With `instances`, the
+> engine creates one chart instance per unique combination of the selected required and present optional label values.
+
+```yaml
+instances:
+  by_labels: [deployment]
+  optional_by_labels: [pid]
+```
+
+| Field                | Meaning                                                                                         |
+|----------------------|-------------------------------------------------------------------------------------------------|
+| `by_labels`          | Required identity selectors. A series missing an explicit required label does not route.        |
+| `optional_by_labels` | Explicit identity keys used only when the series has a nonblank value; missing/blank is omitted. |
+
+`by_labels` supports this selector grammar:
+
+| Token        | Meaning                                                       |
+|--------------|---------------------------------------------------------------|
+| `label_key`  | Include this label in instance identity.                      |
+| `*`          | Include all labels.                                           |
+| `!label_key` | Exclude this label (use with `*` to include all _except_...). |
+
+Excludes are order-independent and always win. For example, both `["host", "!host"]` and `["!host", "host"]` exclude
+`host`. When `by_labels` is non-empty, it must include at least one positive selector: `*` or `label_key`. Exclude tokens
+use strict `!label_key` syntax; `! host` is invalid.
+
+`optional_by_labels` accepts explicit label keys only—no `*` or `!label_key`. Optional keys cannot duplicate or overlap
+required/excluded keys, and cannot be combined with `by_labels: ["*"]`. An `instances` object must contain at least one
+required or optional key.
+
+Required values form the chart-ID suffix first, in declaration order. Each present nonblank optional identity then
+contributes its label key followed by its value, also in declaration order. Optional keys with missing or whitespace-only
+values do not affect the chart ID and are not emitted as chart identity labels.
+
+Chart-ID suffixes use the existing sanitized underscore-joined representation; they are not a reversible serialization.
+Authors should avoid optional identity values deliberately shaped like another configured key/value suffix segment.
+
+**Example: One chart per host**
+
+```yaml
+instances:
+  by_labels: [host]
+```
+
+If the collector reports metrics for hosts `server-1`, `server-2`, `server-3`, the engine creates 3 separate chart instances — each showing only that host's dimensions.
+
+**Example: One chart per unique (job, instance) combination**
+
+```yaml
+instances:
+  by_labels: [nagios_job, perfdata_value]
+```
+
+**Example: All labels except one**
+
+```yaml
+instances:
+  by_labels: ["*", "!_collect_job"]
+```
+
+**Example: Per-worker only when the exporter exposes a worker identity**
+
+```yaml
+instances:
+  optional_by_labels: [pid]
+```
+
+A single-process source without `pid` uses the base chart ID. A multiprocess source with `pid="1234"` uses the
+`<base>_pid_1234` chart and attaches `pid=1234` as an identity label. Including the key keeps partially present
+multi-optional identities distinct. If both source shapes occur in one snapshot, they route to the base and per-PID
+charts respectively; chartengine does not duplicate either series into a second aggregate view.
+
+Use optional identity only for a bounded, sufficiently stable axis that is useful to operators. It still multiplies chart
+cardinality by the number of observed values. If an optional label appears, disappears, or changes, that is an identity
+change: the new chart is created and the old chart follows the configured lifecycle expiry.
+
+#### lifecycle
+
+Controls cardinality limits and expiry for chart instances and dimensions.
+
+| Field                            | Type | Default        | Description                                                                          |
+|----------------------------------|------|----------------|--------------------------------------------------------------------------------------|
+| `max_instances`                  | int  | `0` (disabled) | Best-effort cap on chart instances per template. Active instances are never evicted. |
+| `expire_after_cycles`            | int  | `5`            | Remove chart instances not seen for N successful collection cycles.                  |
+| `dimensions.max_dims`            | int  | `0` (disabled) | Best-effort cap on dimensions per chart instance.                                    |
+| `dimensions.expire_after_cycles` | int  | `0` (disabled) | Remove dimensions not seen for N successful collection cycles.                       |
+
+**How lifecycle caps work**:
+
+- Caps are **best-effort** — instances/dimensions actively seen in the current cycle are never evicted.
+- Oldest inactive entries are evicted first (by last-seen time).
+- Expiry counters only advance on **successful** collection cycles.
+
+### 6. dimensions
+
+A dimension binds a metric from the collector's metric store to a line on the chart.
+
+```yaml
+dimensions:
+  - selector: <metric selector>
+    name: <static name>
+    name_from_label: <label key>
+    options:
+      multiplier: <int>
+      divisor: <int>
+      hidden: <bool>
+      float: <bool>
+```
+
+| Field                | Type   | Required | Default | Description                                                      |
+|----------------------|--------|----------|---------|------------------------------------------------------------------|
+| `selector`           | string | **yes**  |         | Metric selector expression (see [selectors](#selectors) below).  |
+| `name`               | string | no       |         | Static dimension name shown in the chart.                        |
+| `name_from_label`    | string | no       |         | Dynamic name: use the value of this label as the dimension name. |
+| `options.multiplier` | int    | no       | `1`     | Multiply the raw value by this factor.                           |
+| `options.divisor`    | int    | no       | `1`     | Divide the raw value by this factor.                             |
+| `options.hidden`     | bool   | no       | `false` | Hide this dimension in the chart (still collected).              |
+| `options.float`      | bool   | no       | `false` | Force floating-point precision. A dimension also inherits the metric's float flag from the collector, so this is redundant (and harmless) when the metric is already marked float. |
+
+> [!IMPORTANT]
+> There are three ways to name a dimension — pick **exactly one**:
+> - `name` — static name you choose (e.g., `name: read`).
+> - `name_from_label` — dynamic name from a label value (e.g., `name_from_label: method` → dimensions "GET", "POST", ...).
+> - **Omit both** — the engine infers the name automatically for histogram buckets (`le`), summary quantiles (`quantile`), and statesets.
+>
+> `name` and `name_from_label` are mutually exclusive. Duplicate static `name` values within the same chart are rejected.
+
+#### aggregation
+
+Aggregation applies when multiple source series map to the same rendered chart ID and dimension name during one
+successful collection snapshot. This commonly happens when `instances.by_labels` intentionally omits high-cardinality
+labels, or when an `instances.optional_by_labels` key is absent. The source series keep their full identity in `metrix`;
+only their chart output is reduced.
+
+| Value | Meaning                                  | Typical use                                                |
+|-------|------------------------------------------|------------------------------------------------------------|
+| `sum` | Add all observations.                   | Additive counters, totals, histogram buckets/counts/sums.  |
+| `min` | Keep the smallest non-NaN observation.  | Oldest timestamp, lowest limit, "all" for 0/1 states.      |
+| `max` | Keep the largest non-NaN observation.   | Latest timestamp, highest limit, "any" for 0/1 states.     |
+| `avg` | Compute the unweighted arithmetic mean. | Typical gauge value, fraction active for 0/1 states.       |
+
+Set `aggregation` on the chart; it applies to every dimension in that chart. When omitted, the effective reducer is
+`sum`, preserving historical behavior. A chart cannot mix reducers; use separate charts when dimensions require different
+aggregation semantics. `avg` always emits floating-point dimensions, even when all inputs are integers. `sum` and `avg`
+propagate NaN; `min` and `max` ignore NaN when a finite observation exists. All non-finite final values render as gaps.
+
+The engine cannot infer aggregation from the metric kind: gauges can represent additive stocks, states, timestamps,
+limits, or averages. Authors must choose from the metric's meaning. Additional constraints:
+
+- `avg` is unweighted. Averaging pre-aggregated averages does not produce a global weighted average.
+- Histogram buckets, counts, and sums are mergeable with `sum`; other reducers do not produce a merged histogram.
+- Summary quantiles cannot be merged into a global quantile with these reducers.
+- Reduction happens before Netdata applies the dimension multiplier/divisor and chart algorithm. An overall negative
+  multiplier/divisor scale reverses the displayed ordering of `min` and `max`. Non-sum reduction of cumulative counter
+  totals can produce misleading deltas when source membership changes.
+- `instances.by_labels` and `instances.optional_by_labels` control emitted chart cardinality; `aggregation` only selects
+  the value for collisions created by that projection. Every source series is still collected, stored, and routed.
+
+#### selectors
+
+A selector specifies which metric(s) a dimension should match.
+
+**Syntax:**
+
+```
+metric_name
+metric_name{label_key=label_value, ...}
+```
+
+- The metric name prefix is **required** — label-only selectors like `{label=value}` are rejected.
+- The metric must be declared in the current group's `metrics` list (or inherited from an ancestor group).
+- Label filters narrow which series match. Without labels, all series of that metric match.
+
+**Examples:**
+
+```yaml
+# Match all series of the "queries" metric
+- selector: queries
+
+# Match only series where method="GET"
+- selector: http_requests_total{method="GET"}
+
+# Match a specific histogram bucket
+- selector: request_duration_seconds_bucket{le="0.5"}
+```
+
+#### Common dimension patterns
+
+**Unit conversion** — convert bytes to kilobits per second:
+
+```yaml
+dimensions:
+  - selector: bytes_received
+    name: in
+    options:
+      multiplier: 8
+      divisor: 1000
+```
+
+**Bidirectional charts** — use a negative multiplier to display below zero:
+
+```yaml
+dimensions:
+  - selector: bytes_received
+    name: in
+    options:
+      multiplier: 8
+      divisor: 1000
+  - selector: bytes_sent
+    name: out
+    options:
+      multiplier: -8
+      divisor: 1000
+```
+
+**Float precision** — for ratios or small decimal values. A dimension also inherits the metric's float flag from the collector (collectors mark float-valued metrics), so `options.float` is redundant (harmless) for those and only needed to force float on a metric the collector did not mark float:
+
+```yaml
+dimensions:
+  - selector: efficiency_ratio
+    name: efficiency
+    options:
+      float: true
+```
+
+**Dynamic naming from labels** — each unique label value becomes a separate dimension:
+
+```yaml
+dimensions:
+  - selector: http_requests_total
+    name_from_label: method
+```
+
+If the metric has series with `method="GET"`, `method="POST"`, etc., each becomes its own dimension on the chart.
+
+## Examples
+
+### Simple: static metrics, no instances
+
+A collector that monitors a single MySQL server. Each chart has a fixed set of dimensions.
+
+```yaml
+version: v1
+context_namespace: mysql
+groups:
+  - family: Queries
+    groups:
+      - family: Statistics
+        metrics:
+          - queries
+          - questions
+          - slow_queries
+          - com_delete
+          - com_insert
+          - com_select
+          - com_update
+        charts:
+          - id: queries
+            title: Queries
+            context: queries
+            units: queries/s
+            algorithm: incremental
+            dimensions:
+              - selector: queries
+                name: queries
+              - selector: questions
+                name: questions
+              - selector: slow_queries
+                name: slow_queries
+          - id: queries_type
+            title: Queries By Type
+            context: queries_type
+            units: queries/s
+            type: stacked
+            algorithm: incremental
+            dimensions:
+              - selector: com_delete
+                name: delete
+              - selector: com_insert
+                name: insert
+              - selector: com_select
+                name: select
+              - selector: com_update
+                name: update
+```
+
+### Per-instance: one chart per host
+
+A ping collector that monitors multiple hosts. Each host gets its own set of charts.
+
+```yaml
+version: v1
+context_namespace: ping
+groups:
+  - family: latency
+    metrics:
+      - min_rtt
+      - max_rtt
+      - avg_rtt
+    charts:
+      - id: host_rtt
+        title: Ping round-trip time
+        context: host_rtt
+        units: milliseconds
+        type: area
+        instances:
+          by_labels: [host]
+        dimensions:
+          - selector: min_rtt
+            name: min
+            options:
+              divisor: 1000
+          - selector: max_rtt
+            name: max
+            options:
+              divisor: 1000
+          - selector: avg_rtt
+            name: avg
+            options:
+              divisor: 1000
+```
+
+### Per-instance with multiple labels
+
+MySQL replication monitoring creates one chart per replication connection.
+
+```yaml
+groups:
+  - family: Replication
+    groups:
+      - family: Slave Status
+        metrics:
+          - seconds_behind_master
+          - slave_io_running
+          - slave_sql_running
+        charts:
+          - id: slave_behind
+            title: Slave Behind Seconds
+            context: slave_behind
+            units: seconds
+            instances:
+              by_labels: [connection]
+            dimensions:
+              - selector: seconds_behind_master
+                name: seconds
+          - id: slave_thread_running
+            title: I/O / SQL Thread Running State
+            context: slave_status
+            units: boolean
+            instances:
+              by_labels: [connection]
+            dimensions:
+              - selector: slave_io_running
+                name: io_running
+              - selector: slave_sql_running
+                name: sql_running
+```
+
+### Deeply nested groups
+
+MySQL's InnoDB storage engine metrics organized in a deep hierarchy.
+
+```yaml
+groups:
+  - family: Storage Engine
+    groups:
+      - family: InnoDB
+        groups:
+          - family: Buffer Pool
+            metrics:
+              - innodb_buffer_pool_pages_data
+              - innodb_buffer_pool_pages_dirty
+              - innodb_buffer_pool_pages_free
+              - innodb_buffer_pool_pages_misc
+              - innodb_buffer_pool_pages_total
+            charts:
+              - id: innodb_buffer_pool_pages
+                title: InnoDB Buffer Pool Pages
+                context: innodb_buffer_pool_pages
+                units: pages
+                dimensions:
+                  - selector: innodb_buffer_pool_pages_data
+                    name: data
+                  - selector: innodb_buffer_pool_pages_dirty
+                    name: dirty
+                    options:
+                      multiplier: -1
+                  - selector: innodb_buffer_pool_pages_free
+                    name: free
+                  - selector: innodb_buffer_pool_pages_misc
+                    name: misc
+                    options:
+                      multiplier: -1
+                  - selector: innodb_buffer_pool_pages_total
+                    name: total
+          - family: I/O
+            metrics:
+              - innodb_data_read
+              - innodb_data_written
+            charts:
+              - id: innodb_io
+                title: InnoDB I/O Bandwidth
+                context: innodb_io
+                units: KiB/s
+                type: area
+                algorithm: incremental
+                dimensions:
+                  - selector: innodb_data_read
+                    name: read
+                    options:
+                      divisor: 1024
+                  - selector: innodb_data_written
+                    name: write
+                    options:
+                      divisor: 1024
+```
+
+The resulting chart families are `Storage Engine/InnoDB/Buffer Pool` and `Storage Engine/InnoDB/I/O`.
+
+### chart_defaults: reducing repetition
+
+When monitoring a cloud resource that has many charts, all sharing the same ordering priority and instance identity.
+
+```yaml
+groups:
+  - family: Azure PostgreSQL
+    context_namespace: postgres_flexible
+    chart_defaults:
+      priority: 100
+      label_promotion: [resource_name, resource_group, region]
+      instances:
+        by_labels: [resource_uid]
+    charts:
+      - title: CPU Percent
+        context: cpu_percent
+        units: percentage
+        dimensions:
+          - selector: postgres_flexible.cpu_percent_average
+            name: average
+      - title: Memory Percent
+        context: memory_percent
+        units: percentage
+        dimensions:
+          - selector: postgres_flexible.memory_percent_average
+            name: average
+      - title: Storage Percent
+        context: storage_percent
+        units: percentage
+        dimensions:
+          - selector: postgres_flexible.storage_percent_average
+            name: average
+```
+
+All three charts inherit `priority`, `instances`, and `label_promotion` from `chart_defaults` — no repetition needed.
+
+### Autogeneration: handling unpredictable metrics
+
+For collectors where the metric set is user-defined or discovered at runtime, use autogen to catch metrics that don't match any explicit chart template.
+
+```yaml
+version: v1
+context_namespace: prometheus_scraper
+engine:
+  autogen:
+    enabled: true
+    expire_after_success_cycles: 30
+  selector:
+    deny: ["go_*", "promhttp_*"]      # exclude internal Go/Prometheus metrics
+groups:
+  - family: Application
+    metrics:
+      - app_http_requests_total
+      - app_http_response_time_seconds
+    charts:
+      - id: app_requests
+        title: Application HTTP Requests
+        context: http_requests
+        units: requests/s
+        algorithm: incremental
+        instances:
+          by_labels: [instance]
+        dimensions:
+          - selector: app_http_requests_total
+            name_from_label: status_code
+      - id: app_response_time
+        title: Application Response Time
+        context: response_time
+        units: seconds
+        instances:
+          by_labels: [instance]
+        dimensions:
+          - selector: app_http_response_time_seconds
+            name: p99
+            options:
+              float: true
+```
+
+The explicitly defined charts handle `app_http_requests_total` and `app_http_response_time_seconds`. Any _other_ application metrics the scraper discovers are automatically charted by the engine, and removed after 30 cycles of inactivity. The `selector.deny` filter excludes noisy internal metrics from autogeneration.
+
+## Validation Rules
+
+> [!CAUTION]
+> Unknown YAML fields cause an immediate decode error (strict unmarshal). Double-check field names for typos — a misspelled field like `demensions` will be caught at parse time with an unmarshal error, not at runtime with a descriptive message pointing to the affected chart.
+
+All rules below produce semantic validation errors unless noted:
+
+| Rule                                                                                    | Error type                      |
+|-----------------------------------------------------------------------------------------|---------------------------------|
+| `version` must be `v1`                                                                  | semantic                        |
+| `groups[]` must be non-empty                                                            | semantic                        |
+| Root `group.family` may be omitted; nested `group.family` must be nonblank               | semantic                        |
+| A chart directly under a transparent root must provide a nonblank `chart.family`         | semantic                        |
+| `group.metrics[]` entries must not be empty; no duplicates within same group            | semantic                        |
+| `chart.title`, `chart.context`, `chart.units` must be non-empty                         | semantic                        |
+| `chart.algorithm` must be `absolute` or `incremental` (when specified)                  | semantic                        |
+| `chart.aggregation` must be `sum`, `min`, `max`, or `avg` (when specified)               | semantic                        |
+| `chart.type` must be `line`, `area`, `stacked`, or `heatmap` (when specified)           | semantic                        |
+| `dimension.selector` must include explicit metric name (prefix before `{`)              | semantic                        |
+| Selector metric must be visible in current group metric scope                           | semantic                        |
+| `name` and `name_from_label` are mutually exclusive                                     | semantic                        |
+| `name` and `name_from_label` must not be whitespace-only                                | semantic                        |
+| Duplicate dimension `name` values within the same chart are rejected                    | semantic                        |
+| `instances` must contain at least one required or optional label                        | semantic                        |
+| `instances.by_labels` exclude token must use `!label_key` syntax                         | semantic                        |
+| `instances.by_labels` must include at least one positive selector (`*` or `label_key`)   | semantic                        |
+| `instances.by_labels` tokens must not be duplicated                                     | semantic                        |
+| `instances.optional_by_labels` accepts unique explicit label keys only                  | semantic                        |
+| Optional keys must not overlap required/excluded keys or accompany `by_labels: ["*"]`    | semantic                        |
+| `label_promotion[]` entries must not be empty or whitespace-only                        | semantic                        |
+| Lifecycle numeric fields must be `>= 0`                                                 | semantic                        |
+| `engine.autogen.max_type_id_len` must be `0` or `>= 4`                                  | semantic                        |
+| Every autogen rule requires a non-empty valid `scope` simple pattern                    | semantic                        |
+| Every autogen rule selector requires at least one non-empty valid `allow`/`deny` entry  | semantic                        |
+| Unknown YAML fields                                                                     | decode error (strict unmarshal) |
+
+## Engine-Derived Behavior
+
+> [!NOTE]
+> These behaviors are applied by `chartengine` during compilation or runtime planning, not by the template parser. You
+> don't need to configure them, but knowing about them helps you write simpler templates.
+
+| Input                                   | Derived behavior                                                                         |
+|-----------------------------------------|------------------------------------------------------------------------------------------|
+| Missing `chart.id`                      | `id` derived from `context` (`.` replaced with `_`).                                     |
+| Missing `chart.algorithm`               | Resolved per rendered dimension from runtime series kind: counter = `incremental`; every other kind = `absolute`. |
+| Effective `chart.priority <= 0` after group inheritance | Treated as `70000` (engine default).                                        |
+| Root/nested family hierarchy + `chart.family` | Nonblank segments compose into a `/`-separated chart family.                         |
+| `options.multiplier = 0`                | Treated as `1`.                                                                          |
+| `options.divisor = 0`                   | Treated as `1`.                                                                          |
+
+## Programmatic API
+
+> [!NOTE]
+> Most collectors ship a static `charts.yaml` and never touch the Go API. This section is for collectors that **build a chart template at runtime** — for example from discovery results or selected profiles — and return it from `CollectorV2.ChartTemplateYAML()`.
+
+The package exposes a small Go surface for decoding, cloning, and re-emitting templates:
+
+| Function                                           | Purpose                                                                                         |
+|----------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `DecodeYAML([]byte) (*Spec, error)`                | Strict parse, apply decode-time defaults, then validate. The canonical read path.               |
+| `DecodeYAMLValidated([]byte) (*Spec, Validation, error)` | Decode plus immutable derived validation artifacts for runtime consumers such as chartengine. |
+| `Group.Clone() Group`                              | Typed deep copy of a group and everything nested under it.                                      |
+| `Spec.MarshalTemplate() (string, error)`           | Validate (only) and serialize a runtime-built template to YAML.                                 |
+
+### Building a template at runtime
+
+`CollectorV2.ChartTemplateYAML()` returns a plain `string`, so build the template where the error can be handled — typically once during `Init` — and cache the result; `ChartTemplateYAML()` then returns the cached string. Assemble a `Spec` from `charttpl` types and serialize it with `MarshalTemplate`:
+
+```go
+func buildChartTemplate(groups []charttpl.Group) (string, error) {
+    spec := charttpl.Spec{
+        Version:          charttpl.VersionV1,
+        ContextNamespace: "myapp",
+        Groups:           groups, // assembled from discovery / profiles
+    }
+    return spec.MarshalTemplate()
+}
+```
+
+`MarshalTemplate` runs `Spec.Validate()` and marshals with `gopkg.in/yaml.v2` — the same library `DecodeYAML` parses with — so a runtime template emits and re-decodes through one consistent YAML implementation. It deliberately does **not** apply decode-time defaults: a field you leave unset stays unset in the emitted YAML, and the chart engine applies the defaults when it re-decodes the template. Treat the returned string as opaque — it is only ever re-decoded, never compared byte-for-byte.
+
+### Cloning a shared template before mutating it
+
+Collectors that derive groups from a **shared catalog** (profiles loaded once and reused across jobs) must not mutate those groups in place — a per-job edit would corrupt the catalog for every other job. `Group.Clone()` returns an isolated deep copy, including nested groups, charts, dimensions, and their option pointers; mutate the clone freely:
+
+```go
+g := profile.Template.Clone()
+g.Metrics = perJobMetrics // safe: the shared catalog copy is untouched
+spec.Groups = append(spec.Groups, g)
+```
+
+`Clone()` is needed only when you mutate a group you do not own. A collector that decodes a fresh `Spec` per job (its own `DecodeYAML` result) already owns it and can mutate it directly.
