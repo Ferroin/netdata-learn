@@ -1,0 +1,143 @@
+
+
+## How Metrics Centralization Works
+
+```mermaid
+flowchart BT
+    C1("**Netdata Child 1**<br/><br/>Production System")
+    C2("**Netdata Child 2**<br/><br/>Production System")
+    C3("**Netdata Child N**<br/><br/>Production System")
+    P1("**Netdata Parent 1**<br/><br/>Cluster Node")
+    P2("**Netdata Parent 2**<br/><br/>Cluster Node")
+    C1 -->|stream| P1
+    C2 -->|stream| P1
+    C3 -->|stream| P1
+    C1 & C2 & C3 -.->|failover| P2
+    P1 -->|stream| P2
+    P2 -.->|failover| P1
+    
+    %% Style definitions
+    classDef child fill:#ffeb3b,stroke:#000000,stroke-width:3px,color:#000000,font-size:16px
+    classDef parent fill:#4caf50,stroke:#000000,stroke-width:3px,color:#000000,font-size:16px
+    
+    %% Apply styles
+    class C1,C2,C3 child
+    class P1,P2 parent
+```
+
+For full details on high-availability Parent clusters, including failover and maintenance procedures, see [Clustering and High Availability of Netdata Parents](/docs/agent/observability-centralization-points/metrics-centralization-points/clustering-and-high-availability-of-netdata-parents).
+
+## Installation
+
+A **Netdata Parent** is a regular Netdata Agent configured to receive streaming metrics from Netdata Children (also normal Agents!).
+
+To install a Netdata Parent:
+
+1. Install Netdata on your Parent node.
+
+   For installation instructions, see the [Installation section](/docs/agent/packaging/installer).
+
+2. After installation, configure `stream.conf` to enable reception from Children.
+
+   See [Configuring Metrics Centralization Points](/docs/agent/observability-centralization-points/metrics-centralization-points/configuration) for detailed configuration instructions.
+
+3. Access your Parent's dashboard.
+
+   Once your Parent is receiving metrics from your Children, open its built-in dashboard at `http://parent-ip:19999` to view metrics, custom dashboards, and alerts for every connected Child. Non-sensitive functions (mount points, network interfaces, containers, etc.) work anonymously too; [sensitive functions](/docs/agent/netdata-oss-limitations) like processes or network connections require signing in to Netdata Cloud. For secure remote access without exposing port 19999 directly, see the [reverse proxy guides](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy).
+
+4. Connect your Parent to Netdata Cloud.
+
+   Claiming the Parent lets Netdata Cloud query it and registers all connected Children to Netdata Cloud automatically, adding a unified view across multiple Parents, mobile alert notifications ([paid plans](/docs/agent/netdata-cloud/view-plan-and-billing)), and deduplication of alert notifications when more than one Parent evaluates the same Child. See the [Connect Agent to Cloud guide](/docs/agent/src/claim) for instructions.
+
+<details>
+<summary><strong>Deploying a Parent with Docker</strong></summary><br/>
+
+A Netdata Parent uses the standard [`netdata/netdata`](/docs/agent/packaging/docker) Docker image—a Parent is simply a regular Agent whose `stream.conf` is configured to receive metrics, so no separate image or flag is required.
+
+Deploy the container with the `docker run` command from the [Docker installation guide](/docs/agent/packaging/docker). The persistent volumes (`netdataconfig`, `netdatalib`, `netdatacache`) created by that command keep the Parent's configuration and metrics retention across container restarts.
+
+To configure `stream.conf` inside the running container:
+
+```bash
+docker exec -it netdata bash
+cd /etc/netdata && ./edit-config stream.conf
+```
+
+Set the `[API_KEY]` section as described in [Configuring Metrics Centralization Points](/docs/agent/observability-centralization-points/metrics-centralization-points/configuration), then apply the change with `docker restart netdata`.
+
+<br/>
+</details>
+
+## Key Features
+
+:::important
+
+**Netdata Streaming and Replication**
+
+Copies **recent past samples** (replication) and **real-time new samples** (streaming) from production systems (**Netdata Children**) to **metrics centralization points** (**Netdata Parents**). **Netdata Parents** store the database for these metrics based on **retention settings**.
+
+:::
+
+### How Your Systems Connect
+
+<details>
+<summary><strong>Netdata Child Behavior</strong></summary><br/>
+
+- Each **Netdata Child** can stream to **only one** Netdata Parent at a time.
+- Multiple **Netdata Parents** can be configured for **high availability**, but only the **first working one** will be used.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Netdata Parent Capabilities</strong></summary><br/>
+
+- Receives metric samples **from multiple Netdata Children**.
+- Can **re-stream** received metrics to another **Netdata Parent**, forming an **infinite hierarchy** of Parents.
+- Supports **Netdata Parents Clusters** for **high availability**.
+
+<br/>
+</details>
+
+## Feature Comparison
+
+| Feature                    | Netdata Child (Production System)                 | Netdata Parent (Centralization Point)                 |
+|----------------------------|---------------------------------------------------|-------------------------------------------------------|
+| **Metrics Retention**      | Minimal retention; can use `ram` or `alloc` mode. | Stores metrics for all connected systems.             |
+| **Machine Learning**       | Can be disabled (default: enabled).               | Runs anomaly detection for all connected systems.     |
+| **Alerts & Notifications** | Can be disabled (default: enabled).               | Monitors health and sends alerts for all systems.     |
+| **API & Dashboard**        | Can be disabled (default: enabled).               | Hosts the dashboard using its own retention settings. |
+| **Exporting Metrics**      | Optional (default: enabled).                      | Exports all collected metrics.                        |
+| **Netdata Functions**      | Child must be online to function.                 | Forwards function requests to connected Children.     |
+| **Netdata Cloud**          | Not required.                                     | Registers all connected systems to Netdata Cloud.     |
+
+## **Supported Configurations**
+
+### **For Netdata Children**
+
+- **Full Mode (Default)**:
+    - All Netdata features are enabled (machine learning, alerts, notifications, dashboard, etc.).
+- **Thin Mode**:
+    - Only collects and forwards metrics to a Parent.
+    - Some local retention is kept to handle network issues, but all other features are disabled.
+
+### **For Netdata Parents**
+
+- **Standalone**:
+    - A single Parent in the infrastructure or the top-most Parent in a hierarchy.
+- **Cluster**:
+    - A group of Parents that share the same data from the same Children.
+    - Provides **high availability**.
+- **Proxy**:
+    - Stores received metrics locally and **forwards them** to a higher-level Parent (Grand Parent).
+
+### **Cluster Configuration**
+
+- A Cluster consists of **circular Proxy nodes**, where each Parent acts as a Parent to the others.
+- Only the **top level** of a multi-level hierarchy can be configured as a cluster.
+
+## **Best Practices**
+
+For detailed guidelines, check [Best Practices for Observability Centralization Points](/docs/agent/observability-centralization-points/best-practices).
+
+To understand how node connection states (Live, Stale, Offline) work with Parent-Child setups, see [Node States and Transitions](/docs/agent/netdata-cloud/node-states-and-transitions).

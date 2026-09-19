@@ -1,0 +1,241 @@
+
+
+Netdata categorizes nodes as **ephemeral** or **permanent** to help you tailor alerting, cleanup, and monitoring strategies for dynamic or static infrastructures.
+
+## Node Types
+
+| Type          | Description                                    | Common Use Cases                                                                                                                            |
+|---------------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| **Ephemeral** | Expected to disconnect or reconnect frequently | • Auto-scaling cloud instances<br />• Dynamic containers and VMs<br />• IoT devices with intermittent connectivity<br />• Test environments |
+| **Permanent** | Expected to maintain continuous connectivity   | • Production servers<br />• Core infrastructure nodes<br />• Critical monitoring systems<br />• Stable database servers                     |
+
+:::note
+
+Disconnections in **permanent nodes** may indicate system failures and require immediate attention.
+
+:::
+
+### Key Benefits of Ephemeral Nodes
+
+1. **Reduced Alert Noise**: Disconnection alerts apply only to permanent nodes.
+2. **Support for Dynamic Infrastructure**: Designate temporary resources as ephemeral to avoid false alarms.
+3. **Automated Cleanup**: Configure retention policies for ephemeral nodes to keep dashboards uncluttered.
+
+## Configuring Ephemeral Nodes
+
+By default, Netdata treats all nodes as permanent. To mark a node as ephemeral:
+
+1. Open the `netdata.conf` file on the target node.
+2. Add the following configuration:
+   ```ini
+   [global]
+       is ephemeral node = yes
+   ```
+3. Restart the Netdata Agent.
+
+Once restarted, Netdata automatically applies the `_is_ephemeral` host label to the node. This label propagates to your Parent nodes and appears in Netdata Cloud, allowing the system to identify and handle the node as ephemeral.
+
+## Alerts for Parent Nodes
+
+Netdata v2.3.0 introduces two alerts specific to permanent nodes:
+
+| Alert                       | Trigger Condition                                       |
+|-----------------------------|---------------------------------------------------------|
+| `streaming_never_connected` | A permanent node has never connected to a Parent.       |
+| `streaming_disconnected`    | A previously connected permanent node has disconnected. |
+
+:::important
+
+Both alerts are configured with `to: silent` by default. They trigger and appear on the Parent dashboard but **do not send notifications** unless you explicitly enable them. They also apply only to **permanent nodes** — ephemeral nodes are excluded.
+
+:::
+
+### Enabling Notifications for Streaming Alerts
+
+1. **Override each alert to send notifications.** Choose one method:
+
+   **Via Netdata Cloud (recommended):** Use the [Alerts Configuration Manager](/docs/agent/alerts-and-notifications/creating-alerts-with-netdata-alerts-configuration-manager) to edit `streaming_disconnected` and `streaming_never_connected` on the Parent node. The UI creates a dynamic configuration that takes precedence over the stock template. See [Alert Configuration Ordering](/docs/agent/src/health/alert-configuration-ordering) for details. Repeat for both alerts.
+
+   **Via config file:** On the Parent node, create or edit `/etc/netdata/health.d/streaming.conf`. An override must be a complete alert definition (see [Overriding Stock Alerts](/docs/agent/src/health/overriding-stock-alerts)); change `to: silent` to a role. `sysadmin` is the convention used by the stock alerts; any string is accepted:
+
+   ```yaml
+        template: streaming_disconnected
+              on: netdata.streaming_inbound
+           class: Availability
+            type: Streaming
+       component: Streaming
+    chart labels: type=permanent
+            calc: ${stale disconnected}
+           units: nodes
+           every: 10s
+            warn: $netdata.uptime.uptime > 30 * 60 AND $this > 0
+           delay: up 5m down 5m multiplier 1.5 max 30m
+         summary: Permanent streaming nodes disconnected
+            info: Permanent child nodes disconnected from this parent. \
+                  If nodes are expected to disconnect, mark them as ephemeral, by editing their netdata.conf \
+                  and setting: [global].is ephemeral node = yes
+              to: sysadmin
+   ```
+
+   Repeat for `streaming_never_connected` — note that `template`, `calc`, `summary`, and `info` all differ:
+
+   ```yaml
+        template: streaming_never_connected
+              on: netdata.streaming_inbound
+           class: Availability
+            type: Streaming
+       component: Streaming
+    chart labels: type=permanent
+            calc: ${stale archived}
+           units: nodes
+           every: 10s
+            warn: $netdata.uptime.uptime > 30 * 60 AND $this > 0
+           delay: up 5m down 5m multiplier 1.5 max 30m
+         summary: Permanent streaming nodes never connected
+            info: Permanent child nodes never connected to this parent. \
+                  If these nodes should actually be ephemeral, run: \
+                  netdatacli mark-stale-nodes-ephemeral ALL_NODES
+              to: sysadmin
+   ```
+
+   After saving the file, reload health on the Parent:
+
+   ```bash
+   sudo netdatacli reload-health
+   ```
+
+   Make sure the role you choose has recipients wired up in your notification method(s) — see [Centralized Cloud Notifications](/docs/agent/alerts-and-notifications/notifications/centralized-cloud-notifications/centralized-cloud-notifications-reference) for Cloud setup.
+
+2. **Enable Cloud notifications.** An administrator must [enable Alert notifications for the Space](/docs/agent/alerts-and-notifications/notifications/centralized-cloud-notifications/manage-notification-methods#manage-space-notification-settings). Without this step, Netdata Cloud will not forward any alert notifications.
+
+**See also:** [Centralized Cloud Notifications](/docs/agent/alerts-and-notifications/notifications/centralized-cloud-notifications/centralized-cloud-notifications-reference) for notification setup, and [Node States and Transitions](/docs/agent/netdata-cloud/node-states-and-transitions) for troubleshooting node offline states.
+
+## Automatic Node Instance Cleanup in Netdata Cloud
+
+Netdata Cloud automatically removes inactive nodes to keep your dashboards clean and organized.
+
+### Cleanup Rules
+
+| Node Type                    | Offline Duration | Description                                                                                                                        |
+|------------------------------|------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| **Child nodes**              | 48 hours         | Nodes that connect through a Parent node. Deleted when:<br />• The child node goes offline, OR<br />• The Parent node goes offline |
+| **Directly connected nodes** | 7 days           | Nodes claimed directly to Netdata Cloud without going through a Parent.                                                            |
+| **Ephemeral nodes**          | Custom           | Temporary nodes (containers, auto-scaling VMs) with configurable cleanup periods. See configuration below.                         |
+| **Unseen nodes**             | 48 hours         | Nodes that were claimed but have never connected to Netdata Cloud.                                                                 |
+
+:::tip
+
+**Stale nodes are NOT automatically deleted.** Only Offline and Unseen nodes are subject to automatic cleanup. A Stale node has historical data available via a Parent, so it's preserved until the Parent goes offline or the data expires.
+
+:::
+
+:::info Important
+
+If a child node is deleted and later reconnects, it's automatically recreated in Netdata Cloud. Any historical data retained on the Parent node remains accessible.
+
+:::
+
+## Monitoring and Managing Node Status
+
+### Mark Permanently Offline Nodes as Ephemeral
+
+To mark nodes (including virtual ones) as ephemeral:
+
+```bash
+netdatacli mark-stale-nodes-ephemeral <node_id | machine_guid | hostname | ALL_NODES>
+```
+
+This keeps historical data queryable and clears active alerts.
+
+```mermaid
+flowchart TD
+    A("**Offline Node Detected**") -->|Run CLI Command| B("**Use netdatacli mark-stale-nodes-ephemeral**")
+    B --> C("**Node Marked as Ephemeral**")
+    C --> D("**Metrics Remain Available**")
+    C --> E("**Active Alerts Cleared**")
+    C --> F{"**Node Reconnects?**"}
+    F -->|Yes - no config| G("**Reverts to Permanent**")
+    F -->|No| H("**Remains Ephemeral**")
+    classDef step fill: #4caf50, stroke: #000000, stroke-width: 3px, color: #000000, font-size: 16px
+    classDef alert fill: #ffeb3b, stroke: #000000, stroke-width: 3px, color: #000000, font-size: 16px
+    class A step
+    class B step
+    class C step
+    class D step
+    class E step
+    class F alert
+    class G alert
+    class H alert
+```
+
+### Removing Offline Nodes
+
+To fully remove permanently offline nodes:
+
+```bash
+netdatacli remove-stale-node <node_id | machine_guid | hostname | ALL_NODES>
+```
+
+:::note
+
+For detailed instructions on removing nodes from Netdata Cloud (including **offline** and **stale** nodes, bulk operations, and UI-based removal), see the [Remove Node Guide](https://github.com/netdata/netdata/edit/master/docs/learn/remove-node.md). This covers scenarios where UI removal is disabled due to parent-child configured relationships.
+
+:::
+
+```mermaid
+flowchart TD
+    A("**Offline Node Detected**") -->|Run CLI Tool| B("**Execute remove-stale-node Command**")
+    B --> C("**Node Removed from System**")
+    C --> D("**Node No Longer Queryable**")
+    C --> E("**Alerts for Node Cleared**")
+    classDef step fill: #4caf50, stroke: #000000, stroke-width: 3px, color: #000000, font-size: 16px
+    class A step
+    class B step
+    class C step
+    class D step
+    class E step
+```
+
+## Automatically Removing Ephemeral Nodes
+
+To enable automatic cleanup of ephemeral nodes:
+
+1. Open the `netdata.conf` file on Netdata Parent nodes.
+2. Add the following configuration:
+
+   ```ini
+   [db]
+   cleanup ephemeral hosts after = 1d
+   ```
+
+3. Restart the Netdata Agent.
+
+This removes ephemeral nodes after 24 hours of disconnection. Once all Parents purge the node, it is automatically removed from Netdata Cloud.
+
+```mermaid
+flowchart TD
+    A("**Configure Auto-Removal in netdata.conf**") --> B("**Restart Parent Nodes**")
+    B --> C("**Ephemeral Node Disconnects**")
+    C --> D{"**Wait Period Elapsed?**"}
+    D -->|Yes| E("**Node Automatically Removed**")
+    D -->|No| F("**Node Remains in System**")
+    E --> G{"**All Parents Removed Node?**"}
+    G -->|Yes| H("**Node Removed from Cloud**")
+    classDef step fill: #4caf50, stroke: #000000, stroke-width: 3px, color: #000000, font-size: 16px
+    classDef alert fill: #ffeb3b, stroke: #000000, stroke-width: 3px, color: #000000, font-size: 16px
+    classDef database fill: #2196F3, stroke: #000000, stroke-width: 3px, color: #000000, font-size: 16px
+    class A step
+    class B step
+    class C step
+    class D alert
+    class E alert
+    class F alert
+    class G database
+     class H database
+```
+
+## See Also
+
+- [Node States and Transitions](/docs/agent/netdata-cloud/node-states-and-transitions) - Comprehensive reference for node states (Live, Stale, Offline, Unseen) and transition triggers
+- [Node Identities](/docs/agent/learn/node-identities) - Understand how node identity works alongside ephemerality
+- [VM Templates](/docs/agent/learn/vm-templates) - Configure ephemerality in VM templates for auto-scaling groups
