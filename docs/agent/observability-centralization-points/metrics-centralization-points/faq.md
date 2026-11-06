@@ -1,0 +1,171 @@
+
+
+:::tip
+
+**What You'll Learn**
+
+Answers to common questions about scaling Netdata Parents, clustering, retention, encryption, and troubleshooting centralized monitoring setups.
+
+:::
+
+<details>
+<summary><strong>How much can a Netdata Parent node scale?</strong></summary><br/>
+
+Netdata Parents generally scale well. According [to our tests](https://blog.netdata.cloud/netdata-vs-prometheus-performance-analysis/), Netdata Parents scale better than Prometheus for the same workload: -35% CPU utilization, -49% Memory Consumption, -12% Network Bandwidth, -98% Disk I/O, -75% Disk footprint.
+
+For more information, Check [Sizing Netdata Parents](/docs/agent/netdata-agent/sizing-netdata-agents).
+
+<br/>
+</details>
+
+<details>
+<summary><strong>If I set up a Parent cluster, will I be able to have more Child nodes stream to them?</strong></summary><br/>
+
+No. When you set up an active-active cluster, even if child nodes connect randomly to one or the other, all the parent nodes receive all the metrics of all the child nodes. So, all of them do all the work.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>How much retention do the child nodes need?</strong></summary><br/>
+
+Child nodes need to have only the retention required to connect to another Parent if one fails or stops for maintenance.
+
+- If you have a cluster of parents, 5 to 10 minutes in `alloc` mode is usually enough.
+- If you have only one parent, it would be better to run the child nodes with `dbengine` so that they will have enough retention to backfill the parent node if it stops for maintenance.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Does streaming between child nodes and parents support encryption?</strong></summary><br/>
+
+Yes. You can configure your parent nodes to enable TLS at their web server and configure the child nodes to connect with TLS to it. The streaming connection is also compressed, on top of TLS.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Can I have an HTTP proxy between parent and child nodes?</strong></summary><br/>
+
+No. The streaming protocol works on the same port as the internal web server of Netdata Agents, but the protocol is not HTTP-friendly and cannot be understood by HTTP proxy servers.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Should I load balance multiple parents with a TCP load balancer?</strong></summary><br/>
+
+Although this can be done and for streaming between child and parent nodes it could work, we recommend not doing it. It can lead to several kinds of problems.
+
+It is better to configure all the parent nodes directly in the child nodes `stream.conf`. The child nodes will do everything in their power to find a parent node to connect, and they will never give up.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>When I have multiple parents for the same children, will I receive alert notifications from all of them?</strong></summary><br/>
+
+If all parents are configured to run health checks and trigger alerts, yes.
+
+We recommend using Netdata Cloud to avoid receiving duplicate alert notifications. Netdata Cloud deduplicates alert notifications so that you will receive them only once.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>How do I centrally control or disable default stock alerts for all child nodes from the Parent, so new children do not trigger their own alerts?</strong></summary><br/>
+
+By default, each child runs its own health checks and fires its stock alerts, so every new child you stream in will alert until you change this.
+
+To manage all alerts from the Parent instead:
+
+1. **Turn off the health watchdog on the children.** In each child's `netdata.conf`, disable health so the child no longer evaluates or fires any alerts locally:
+
+   ```ini
+   [health]
+       enabled = no
+   ```
+
+   This is the alert-control part of running children in Thin Mode. Because this is a `netdata.conf` change, **restart** the child Agent to apply it — `netdatacli reload-health` only reloads `health.d/*.conf` files, not `netdata.conf`.
+
+2. **Manage the alerts on the Parent.** The Parent evaluates health checks for every streamed child by default, so you only tune or disable stock alerts once, on the Parent. To override thresholds, silence notifications, or selectively disable specific stock alerts centrally, see [Overriding Stock Alerts](/docs/agent/src/health/overriding-stock-alerts).
+
+With health disabled on the children, any new child you stream to the Parent inherits the alert policy you set on the Parent and never fires its own stock alerts. The [Feature Comparison](/docs/agent/observability-centralization-points/metrics-centralization-points) table summarizes which features each role runs by default.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Should I configure local collectors (like httpcheck) on both Parents in an HA cluster?</strong></summary><br/>
+
+Local collectors such as `httpcheck` are synthetic checks that run on the Netdata node where they are configured. They do not run against data streamed from child nodes. Each Parent in a cluster is a full Netdata node, so a local collector only runs on the Parent where you configure it.
+
+If you configure a collector on only one Parent and that Parent goes down, the check stops entirely until that Parent recovers, even though your child metrics continue flowing through the other Parent.
+
+To make synthetic checks resilient to a Parent failure, configure the collector on both Parents. In an active-active cluster, each Parent also replicates its local collector metrics to the other, so both Parents maintain a complete copy.
+
+Be aware that each Parent evaluates alerts for its own local collectors independently. Since each Parent is a separate Netdata node, the same check configured on both produces alerts from two different nodes. This differs from child-node alerts, which Netdata Cloud can deduplicate when multiple Parents evaluate the same child (see the question above on duplicate alert notifications). Consider this trade-off when deciding whether to run the same synthetic check on both Parents.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>When I have only Parents connected to Netdata Cloud, will I be able to use the Functions feature on my child nodes?</strong></summary><br/>
+
+Yes. Function requests will be received by the Parents and forwarded to the Child via their streaming connection. Function requests are propagated between parents, so this will work even if multiple levels of Netdata Parents are involved.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>If I have a cluster of parents and get one out for maintenance for a few hours, will it have missing data when it returns online?</strong></summary><br/>
+
+Check [Restoring a Netdata Parent after maintenance](/docs/agent/observability-centralization-points/metrics-centralization-points/clustering-and-high-availability-of-netdata-parents).
+
+<br/>
+</details>
+
+<details>
+<summary><strong>I have a cluster of parents. Which one is used by Netdata Cloud?</strong></summary><br/>
+
+When there are multiple data sources for the same node, Netdata Cloud follows this strategy:
+
+1. Netdata Cloud prefers Netdata Agents having `live` data.
+2. For time-series queries, when multiple Netdata Agents have the retention required to answer the query, Netdata Cloud prefers the one that is further away from production systems.
+3. For Functions, Netdata Cloud prefers Netdata Agents that are closer to the production systems.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Is there a way to balance child nodes to the parent nodes of a cluster?</strong></summary><br/>
+
+Yes. When configuring the Parents at the Children `stream.conf`, configure them in different order. Children get connected to the first Parent they find available, so if the order given to them is different, they will spread the connections to the Parents available.
+
+<br/>
+</details>
+
+<details>
+<summary><strong>Is there a way to get notified when a child gets disconnected?</strong></summary><br/>
+
+It depends on the ephemerality setting of each Netdata Child.
+
+1. **Permanent nodes**: These are nodes that should be available permanently and if they disconnect, an alert should be triggered to notify you. By default, all nodes are considered permanent (not ephemeral).
+
+2. **Ephemeral nodes**: These are nodes that are ephemeral by nature, and they may shut down at any point in time without any impact on the services you run.
+
+To set the ephemeral flag on a node, edit its netdata.conf and in the `[global]` section set `is ephemeral node = yes`. This setting is propagated to parent nodes and Netdata Cloud.
+
+A parent node tracks connections and disconnections. When a node is marked as ephemeral and stops connecting for more than 24 hours, the parent will delete it from its memory and local administration, and tell Cloud that it is no longer live nor stale. Data for the node can no longer be accessed, but if the node connects again later, the node will be "revived", and previous data becomes available again.
+
+A node can be forced into this "forgotten" state with the Netdata CLI tool on the parent the node is connected to (if still connected) or one of the parent Agents it was previously connected to. The state will be propagated _upwards_ and _sideways_ in case of an HA setup.
+
+```
+netdatacli remove-stale-node <node_id | machine_guid | hostname | ALL_NODES>
+```
+
+When using Netdata Cloud (via a parent or directly), and a permanent node gets disconnected, Netdata Cloud sends node disconnection notifications.
+
+<br/>
+</details>

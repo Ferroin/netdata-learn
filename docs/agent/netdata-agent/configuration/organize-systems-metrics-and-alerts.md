@@ -1,0 +1,306 @@
+
+
+When you monitor dozens or hundreds of systems, you need powerful ways to keep everything organized. Netdata helps you structure your infrastructure with Spaces, Rooms, virtual nodes, host labels, and metric labels.
+
+## Choose your organization strategy
+
+Netdata provides multiple organization methods that work together:
+
+- **Spaces and Rooms**: Group your infrastructure and team members
+- **Virtual nodes**: Monitor multi-component systems as separate entities
+- **Host labels**: Tag systems by purpose, location, or any custom criteria
+- **Metric labels**: Filter and group metrics within charts
+
+### Organize your infrastructure and team
+
+<details>
+<summary><strong>Spaces</strong> are your primary collaboration environment where you:</summary>
+
+- Organize team members and manage access levels
+- Connect nodes for monitoring
+- Create a unified monitoring environment
+
+</details>
+
+<details>
+<summary><strong>Rooms</strong> function as organizational units within Spaces, providing:</summary>
+
+- Infrastructure-wide dashboards
+- Real-time metrics visualization
+- Focused monitoring views
+- Flexible node grouping
+
+</details>
+
+<br/>
+
+:::info
+
+Each node belongs to exactly one Space but can be assigned to multiple Rooms within that Space.
+
+:::
+
+### Set up your organization
+
+1. **Create a Space** using the plus (+) icon in the left-most sidebar
+2. **Invite team members** and set their access levels
+3. **Create Rooms** to organize nodes by:
+    - Service type (Nginx, MySQL, Pulsar)
+    - Purpose (webserver, database, application)
+    - Location or infrastructure type (cloud provider, bare metal, containers)
+
+:::tip
+
+Most organizations need only one Space. Create multiple Rooms within that Space to organize your infrastructure effectively.
+
+:::
+
+Learn more in our [Spaces and Rooms documentation](/docs/agent/netdata-cloud/organize-your-infrastructure-invite-your-team).
+
+## Virtual nodes
+
+### Monitor complex systems as separate entities
+
+Virtual nodes let you split multi-component systems into distinct, monitorable units. For example, you can monitor each Windows server in your infrastructure as its own node, even when collecting metrics through a single Netdata Agent.
+
+See [Virtual Nodes (vnodes)](/docs/agent/learn/node-identities#virtual-nodes-vnodes) for the full reference: how to define a vnode via YAML or the dynamic configuration GUI, and how to attach it to a collector job.
+
+## Host labels
+
+### Tag your systems for smarter monitoring
+
+Host labels help you:
+
+- Create alerts that adapt to each system's purpose
+- Archive metrics with proper categorization for analysis
+- Track ephemeral containers in Kubernetes clusters
+
+### Use automatic labels
+
+Netdata automatically generates host labels when it starts, capturing:
+
+| Label Category | Information Captured                                                                        |
+|----------------|---------------------------------------------------------------------------------------------|
+| System Info    | Kernel version; OS family, name, version, release, codename, edition, and build when available |
+| Hardware       | CPU architecture, cores, frequency, RAM, disk space, product ID, product name, product type |
+| Environment    | Container details, Kubernetes node status                                                   |
+| Infrastructure | Virtualization layer, Parent-child streaming status                                         |
+
+On every platform, Netdata refreshes CPU count, total RAM, disk capacity, and the default-interface name/IP/detection labels
+five minutes after startup, then thirty minutes after the previous check finishes. Runtime changes such as VM CPU or RAM
+resizing and a changed default route update these labels without a restart. CPU model and frequency, OS/kernel details, and cloud/container/virtualization
+identity remain startup-only.
+On Linux, `_system_cores` prefers present logical CPUs, excluding empty hot-plug slots and independent of Agent CPU affinity.
+With lxcfs, it uses the container's virtualized CPU count. Startup and refresh use the same sources and fallback order.
+Only changed values trigger label updates. Failed detection preserves the last known values; a successful check that finds
+no default route removes the default-interface labels. Custom labels and Kubernetes labels keep their existing reload behavior.
+
+`_net_default_iface`, `_net_default_iface_ip`, and `_net_default_iface_detection` describe the operating system's default
+interface together. `_stream_egress_iface` reports the interface detected for the most recent successful streaming connection,
+which can differ from the OS default. It is retained while disconnected and updated when the next connection's interface is detected.
+Older Parents still interpret `_net_default_iface` as the streaming interface in disconnect diagnostics; upgrade the Parent
+to use `_stream_egress_iface` for those diagnostics.
+Older children can still overwrite `_net_default_iface` with their streaming egress interface, even when connected to an
+upgraded Parent; their interface name and OS-default IP can therefore describe different interfaces until the child is upgraded.
+
+On native NVIDIA Jetson Linux hosts, `_system_l4t_version` identifies the installed Jetson Linux (L4T) release, such as
+`36.5.0`. Use this host label in the **Nodes** or **Metrics** tab filters to select systems running a particular release,
+for example during a fleet upgrade. It is detected at Agent startup from `/etc/nv_tegra_release`, independently of the
+Jetson collector. Restart the Agent after a release upgrade to refresh it. The label is omitted when the file is missing,
+unreadable or invalid, and when Netdata detects that it is running in a container. It does not identify the JetPack or CUDA version.
+
+View your automatic labels at `http://HOST-IP:19999/api/v1/info`:
+
+Host-label values use Netdata's label sanitizer. For example, commas in hardware model identifiers are exposed as dots in host labels.
+
+```json
+{
+  "host_labels": {
+    "_is_k8s_node": "false",
+    "_is_parent": "false"
+  }
+}
+```
+
+### Create custom labels
+
+Add your own labels to categorize systems by any criteria you need.
+
+1. Edit your Netdata configuration:
+
+    ```bash
+    cd /etc/netdata   # Replace with your Netdata config directory
+    sudo ./edit-config netdata.conf
+    :::note
+
+    On Windows, follow [Edit Configuration Files](/docs/agent/netdata-agent/configuration#edit-configuration-files) instead. The `[host labels]` example, naming rules, and environment variable expansion in steps 2 and 3 below work identically on Windows.
+    :::
+
+2. Add a `[host labels]` section:
+
+    ```text
+    [host labels]
+        type = webserver
+        location = us-seattle
+        installed = 20200218
+    ```
+
+   :::info Label naming rules
+    - Names cannot start with `_`
+    - Use only letters, numbers, dots, and dashes
+    - Values cannot contain: `!` ` ` `'` `"` `*`
+      :::
+
+3. You can use environment variables in label values:
+
+    ```text
+    [host labels]
+        region = ${REGION}
+        rack = ${RACK:-unknown}
+        env = ${DEPLOYMENT_ENV:-production}
+        location = ${DC}-${RACK:-default}
+    ```
+
+    | Syntax            | Behavior                                                                              |
+    |-------------------|---------------------------------------------------------------------------------------|
+    | `${VAR}`          | Replaced with the value of `VAR`. If unset or empty, the label value becomes `[none]` |
+    | `${VAR:-default}` | Replaced with the value of `VAR`. If unset or empty, uses `default`                   |
+
+    Environment variables are resolved when labels are loaded or reloaded. You can mix them with literal text (e.g., `${DC}-${RACK}`).
+
+4. Enable your labels without restarting Netdata:
+
+    ```bash
+    netdatacli reload-labels
+    ```
+
+    On Windows, run this through `netdatacli.exe` — see [Using netdatacli](/docs/agent/netdata-agent/start-stop-restart#windows).
+
+5. Verify your labels at `http://HOST-IP:19999/api/v1/info`
+
+Use custom host labels such as `environment` with [Node Rule-Based Room Assignment](/docs/agent/netdata-cloud/node-rule-based-room-assignment) to route Kubernetes Nodes into separate Rooms.
+
+### Remove custom labels
+
+Remove a custom label you no longer need.
+
+1. Edit your Netdata configuration:
+
+    ```bash
+    cd /etc/netdata   # Replace with your Netdata config directory
+    sudo ./edit-config netdata.conf
+    ```
+
+    On Windows, follow [Edit Configuration Files](/docs/agent/netdata-agent/configuration#edit-configuration-files) instead.
+
+2. In the `[host labels]` section, delete the line for the label you want to remove.
+3. Save the file.
+4. Apply the change without restarting Netdata:
+
+    ```bash
+    netdatacli reload-labels
+    ```
+
+    On Windows, run this through `netdatacli.exe` — see [Using netdatacli](/docs/agent/netdata-agent/start-stop-restart#windows).
+
+5. Confirm the label is gone at `http://HOST-IP:19999/api/v1/info`
+
+### Stream labels from Child to Parent
+
+In Parent-Child setups, host labels automatically stream from children to the parent node. A label change on a child, such as one applied with `netdatacli reload-labels`, reaches its parent and every Parent above it without reconnecting. Parents with periodic system-info refresh support also update the six runtime fields in their cached system information from these labels. Other structured system information retains its handshake values.
+
+Mixed-version setups continue streaming during gradual upgrades. An upgraded child sends refreshed labels to older Parents,
+but those Parents retain their handshake values in structured system information until reconnect. An older child still needs
+an upgrade to detect runtime changes. Upgrading Parents first enables consistent refreshed API and Cloud metadata as children
+are upgraded; upgrading in this order is recommended, not required for streaming compatibility.
+
+Access any child's labels through the parent at:
+`http://localhost:19999/host/CHILD_HOSTNAME/api/v1/info`
+
+:::warning
+
+Child node labels contain sensitive system information. Secure your streaming connections with SSL and consider using [access lists](/docs/agent/src/web/server#access-lists) or [restricting API access](/docs/agent/netdata-agent/securing-netdata-agents#alternative-methods).
+
+:::
+
+### Apply labels to alerts
+
+Create targeted alerts based on host labels. For example, monitor disk space only on webservers:
+
+```text
+   template: disk_fill_rate
+         on: disk.space
+     lookup: max -1s at -30m unaligned of avail
+       calc: ($this - $avail) / (30 * 60)
+      every: 15s
+host labels: type = webserver
+```
+
+Target systems by multiple criteria:
+
+| Target            | Host Label            | Use Case                       |
+|-------------------|-----------------------|--------------------------------|
+| Specific OS       | `_os_name = Debian*`  | Apply alerts to Debian systems |
+| Child nodes only  | `_is_child = true`    | Monitor streaming children     |
+| Docker containers | `_container = docker` | Container-specific alerts      |
+
+See the [health documentation](/docs/agent/src/health/reference#alert-line-host-labels) for more possibilities.
+
+### Export labels with metrics
+
+When using [metrics exporters](/docs/agent/src/exporting), include host labels with your exported data:
+
+```text
+[exporting:global]
+enabled = yes
+send configured labels = yes
+send automatic labels = no
+```
+
+Configure per-connection settings:
+
+```text
+[opentsdb:my_instance3]
+enabled = yes
+destination = localhost:4242
+data source = sum
+update every = 10
+send charts matching = system.cpu
+send configured labels = no
+send automatic labels = yes
+```
+
+## Metric labels
+
+### Filter and group metrics within charts
+
+Netdata's aggregate charts let you filter and group metrics using label name-value pairs. All go.d plugin collectors support labels at the collection job level.
+
+Configure metric labels when collected from multiple sources. For example, label two Apache servers by service and location:
+
+```yaml
+jobs:
+  - name: my_webserver1
+    url: http://host1/server-status?auto
+    labels:
+      service: "Payments"
+      location: "Atlanta"
+  - name: my_webserver2
+    url: http://host2/server-status?auto
+    labels:
+      service: "Payments"
+      location: "New York"
+```
+
+:::tip
+
+Define as many label pairs as you need across all your data collection jobs to create meaningful groupings in your dashboards.
+
+:::
+
+## Next steps
+
+1. **Start with Spaces and Rooms** to organize your infrastructure and team
+2. **Add host labels** to categorize your systems
+3. **Configure metric labels** for detailed filtering within charts
+4. **Set up virtual nodes** if you monitor complex, multi-component systems
