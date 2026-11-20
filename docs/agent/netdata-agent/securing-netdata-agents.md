@@ -1,0 +1,195 @@
+
+
+By default, your Netdata Agent exposes its local dashboard on port `19999`. If your node has a public IP address, the dashboard and metrics are accessible to anyone at `http://NODE:19999`.
+
+You can protect your Agents by implementing any of these security measures:
+
+If you need to align Netdata with enterprise cybersecurity platforms such as Sophos, secure-access gateways, or corporate reverse proxies, see [Configure Netdata for cybersecurity platforms](/docs/agent/netdata-agent/configure-netdata-for-cybersecurity-platforms).
+
+## Security Approaches
+
+### Recommended Methods
+
+**Enable Bearer Token Protection (Netdata Cloud SSO)**
+
+*Best for:* Users who want direct access to agents secured by Netdata Cloud authentication
+
+You can secure direct access to your Netdata Agents and Parents with a single configuration setting. Bearer token protection integrates with Netdata Cloud SSO, so users authenticate through Cloud and inherit their Cloud roles and permissions.
+
+Edit the `[web]` section in `netdata.conf` using the [`edit-config`](/docs/agent/netdata-agent/configuration#edit-configuration-files) script:
+
+```text
+[web]
+    bearer token protection = yes
+```
+
+After restart, users accessing `http://NODE:19999` will be redirected to Netdata Cloud for authentication. Their Cloud role (Admin, Manager, Troubleshooter, etc.) determines what they can access.
+
+**Requirements:**
+
+- Agent must be [claimed to Netdata Cloud](/docs/agent/src/claim)
+- Works with both Community (free) and Business plans
+
+For detailed configuration options, see [Secure Your Netdata Agent with Bearer Token Protection](/docs/agent/netdata-agent/configuration/secure-your-netdata-agent-with-bearer-token).
+
+---
+
+**Disable the Local Dashboard**
+
+*Best for:* Users who monitor their systems through Netdata Cloud dashboards
+
+You can secure your nodes by disabling local dashboard access while maintaining Cloud monitoring capabilities. This eliminates public exposure of metrics and system information while maintaining secure metrics viewing through Netdata Cloud via [ACLK](/docs/agent/src/aclk).
+
+Edit the `[web]` section in `netdata.conf` using the [`edit-config`](/docs/agent/netdata-agent/configuration#edit-configuration-files) script:
+
+```text
+[web]
+    mode = none
+```
+
+Restart your Agent to apply changes. After restart, the Agent's web server (default port `19999`) will no longer accept inbound connections.
+
+:::warning
+
+This disables inbound connections, including streams from Child Agents.
+**Do not use this setting on Parent Agents.**
+
+:::
+
+:::tip
+
+For Docker deployments, set `NETDATA_HEALTHCHECK_TARGET=cli` in your environment variables.
+
+:::
+
+**Use Netdata Parents as Web Application Firewalls**
+
+*Best for:* Production systems requiring layered security and centralized access control
+
+You can enhance security by deploying Parent nodes as border gateways, eliminating the need for direct internet access from production Agents.
+
+Parent nodes provide security by:
+
+- Acting as application firewalls
+- Receiving metrics from Child Agents securely
+- Serving dashboard requests using local data
+- Maintaining Netdata Cloud connectivity through encrypted connection
+
+:::info
+
+This approach isolates production systems from direct internet exposure, even when using Netdata Cloud.
+
+For more information, see [Observability Centralization Points](/guides/deployment-with-centralization-points).
+
+:::
+
+### Alternative Methods
+
+<details>
+<summary><strong>Restrict Dashboard Access to Private Networks</strong></summary>
+
+**Best for:** Organizations with private management networks
+
+You can enhance security by binding the Agent to your organization's private management network interface. This limits dashboard access to your administrative LAN only.
+
+**Configuration:**
+
+Edit the `[web]` section in `netdata.conf` using the [`edit-config`](/docs/agent/netdata-agent/configuration#edit-configuration-files) script:
+
+```text
+[web]
+    bind to = 10.1.1.1:19999 localhost:19999
+```
+
+The Agent supports binding to multiple IPs and ports. When using hostnames, all resolved IPs will be used (for example, `localhost` typically resolves to both `127.0.0.1` and `::1`).
+
+**Cloud Environment Setup:**
+
+For cloud environments without private LAN capabilities or multi-cloud deployments, you can create a virtual management network using mesh VPN tools like `tincd` or `gvpe`. These tools enable secure, private communication between servers while allowing administration stations to access management functions across your cloud infrastructure.
+
+For `gvpe` specifically, we maintain a [deployment tool](https://github.com/netdata/netdata-demo-site/tree/master/gvpe) that includes pre-compiled binaries for Linux and FreeBSD, macOS compilation script, and configuration templates. We use this tool to manage our Netdata demo sites across multiple hosting providers.
+
+</details>
+
+<details>
+<summary><strong>Configure Granular Access Control</strong></summary>
+
+**Best for:** Specific IP address or hostname-based access requirements
+
+You can restrict access to your local dashboard while maintaining Netdata Cloud connectivity by using [access lists](/docs/agent/src/web/server#access-lists).
+
+**Basic Access Control:**
+
+Edit the `[web]` section in `netdata.conf` using the [`edit-config`](/docs/agent/netdata-agent/configuration#edit-configuration-files) script.
+
+Use the `allow connections from` setting to permit specific IP addresses or hostnames:
+
+```text
+[web]
+    # Allow only localhost connections
+    allow connections from = localhost
+
+    # Allow only from management LAN running on `10.X.X.X`
+    allow connections from = 10.*
+
+    # Allow connections only from a specific FQDN/hostname
+    allow connections from = example*
+```
+
+The default setting `localhost *` allows both localhost and all external connections. You can customize this using Netdata's [simple patterns](/docs/agent/src/libnetdata/simple_pattern).
+
+**Advanced Feature-Specific Controls:**
+
+While `allow connections from` globally controls access to all Netdata services, you can set specific permissions for individual features:
+
+```text
+[web]
+    allow connections from = localhost *
+    allow dashboard from = localhost *
+    allow mcp from = localhost *
+    allow badges from = *
+    allow streaming from = *
+    allow netdata.conf from = localhost fd* 10.* 192.168.* 172.16.* 172.17.* 172.18.* 172.19.* 172.20.* 172.21.* 172.22.* 172.23.* 172.24.* 172.25.* 172.26.* 172.27.* 172.28.* 172.29.* 172.30.* 172.31.*
+    allow management from = localhost
+```
+
+When `[web].bearer token protection = yes` is enabled, MCP requests also require the local MCP API key (`Authorization: Bearer <mcp_key>`). Without the key, anonymous MCP requests are rejected.
+
+**Additional Security Options:**
+
+- Review detailed access list options in the [Web Server documentation](/docs/agent/src/web/server#access-lists)
+- Consider [enabling SSL](/docs/agent/src/web/server#examples) to encrypt local dashboard traffic (Netdata Cloud connections are always TLS-encrypted)
+
+</details>
+
+<details>
+<summary><strong>Deploy a Reverse Proxy</strong></summary>
+
+**Best for:** Multi-agent environments requiring unified authentication and SSL termination
+
+You can secure multiple Agents using a single authenticating web server as a reverse proxy. This provides:
+
+- Unified access through URLs like `http://{HOST}/netdata/{NETDATA_HOSTNAME}/`
+- Single sign-on across all Agents
+- Optional TLS encryption
+
+**Supported Web Servers:**
+
+We provide detailed configuration guides for popular web servers:
+
+- [nginx](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy/running-behind-nginx)
+- [HAProxy](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy/running-behind-haproxy)
+- [Apache](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy/running-behind-apache)
+- [Lighttpd](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy/running-behind-lighttpd)
+- [Caddy](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy/running-behind-caddy)
+- [H2O](/docs/agent/netdata-agent/configuration/running-the-netdata-agent-behind-a-reverse-proxy/running-behind-h2o)
+
+</details>
+
+## Firewall and Egress Requirements
+
+The security measures above concern **inbound** access to your Agent's local dashboard (port `19999`). Connected nodes also require outbound access for the Agent-Cloud Link, anonymous telemetry, and automatic updates.
+
+For the complete reference of all default outbound connections — including which are active by default, what each connects to, and how to disable each one — see [Outbound Network Communication](/docs/agent/security-and-privacy-design/netdata-agent-security#outbound-network-communication).
+
+For the domain allowlist and port table required for firewall configuration, see [Configure Netdata for cybersecurity platforms](/docs/agent/netdata-agent/configure-netdata-for-cybersecurity-platforms#required-endpoints-and-ports).

@@ -1,0 +1,247 @@
+
+
+**Netdata is an observability platform for systems, networks, clouds and applications, designed to simplify and automate operations and troubleshooting, with high-fidelity, real-time insights, and with your metrics, logs and traces kept in your own infrastructure.**
+
+Install it, and every system and application you run is collected, charted, scored for anomalies and watched by alerts from the first minute. You start with working dashboards and alerts, not a blank page, and shape them from there: add your own, tune the ones that matter, and choose which ones notify you. It works the same on your first node and on a very large fleet.
+
+Instead of centralizing the data, Netdata **distributes the observability engine** to each system, **keeping data local** while providing **unified access**. This architecture enables **linear scaling** to millions of metrics per second and terabytes of logs, **automated root cause analysis**, a faster experience and significantly **lower total cost of ownership**.
+
+This page explains what Netdata is and the principles behind it. [Netdata Design](/docs/agent/netdata-design) and the [Complete Product Description](/docs/agent/netdata-complete-product-description) go deeper on each part.
+
+## What it covers
+
+- **Observability platform:** metrics, logs, traces, machine learning, topologies, flows, anomalies, forecasting and live views, in one platform.
+- **Systems:** Linux, Windows, macOS and FreeBSD, from IoT and edge devices to bare-metal servers, virtual machines, Kubernetes, HPC and data centers.
+- **Networks:** 1,750+ SNMP profiles, 150k+ SNMP trap profiles, BGP, NetFlow, sFlow and IPFIX flows, topology, and licence management. See the [network performance monitoring docs](/docs/agent/npm).
+- **Clouds:** AWS, Azure and GCP, plus private and hybrid clouds.
+- **Applications:** 2,000+ integrations and open standards: OpenTelemetry (OTLP), OpenMetrics (Prometheus), StatsD and Nagios. See the [Complete Product Description](/docs/agent/netdata-complete-product-description).
+
+## How Netdata is different
+
+### Automated
+
+**Netdata does the work other approaches leave to your team.**
+
+It discovers collection sources and starts collecting. It builds dashboards algorithmically from the structure of the data, so every metric has a correct chart. It ships pre-configured alerts that watch each instance of the components it finds. It discovers dependencies between systems and applications. It runs machine learning on every metric, and it manages itself.
+
+At 3 a.m., you search for a metric, find it already charted, and see which metrics behaved unusually in the incident window.
+
+### High fidelity, in real time
+
+**Netdata collects at per-second resolution by default, independently of scale, because each Agent and Parent does its share of the work.**
+
+Per-second data shows spikes, saturation and the order of cascading failures that minute-level averages hide. Netdata collects on a beat: when a sample is late, the system is usually under stress, and the chart shows the gap instead of hiding it.
+
+You also see the effect of every change as you make it: a fix, a configuration change or a scaling step shows its impact within seconds.
+
+Because Netdata evaluates every metric every second, anomalies such as traffic floods and DDoS patterns show up in the data within seconds of starting.
+
+### Your data stays with you
+
+**Data is stored where it is created: on your Agents and Parents.**
+
+Your metrics, logs and traces leave your servers only when someone views them. Netdata Cloud routes queries to the nodes that hold the data and merges the answers, and it is not in the data path. Every Agent keeps working without Cloud and without internet access. Netdata meets data-sovereignty and residency requirements by design, and keeping data at the edge means no egress charges for monitoring data.
+
+### AI at the core
+
+**Machine learning, a scoring engine and AI work together to find the root cause and impact of problems automatically.**
+
+Machine learning runs inside every Agent and Parent and scores every metric for anomalies as it is collected. A scoring engine ranks the metrics that behaved unusually or changed in any time window you select. Netdata AI investigates from that evidence, performs root-cause and impact analysis and writes AI reports. The MCP server gives any AI assistant the same evidence. You can install Netdata in the middle of a crisis and get real-time insights and AI-assisted troubleshooting immediately.
+
+## The principles behind it
+
+### Meaning at collection time
+
+**Every metric is collected with its meaning, so Netdata can chart it correctly without anyone describing it.**
+
+Each metric arrives with its unit, its family, its place in the structure and the way it should be aggregated. That is why dashboards build themselves, why every chart is a complete analytical tool you explore by pointing and clicking, and why Netdata has no query language: there is nothing you need to express to get a correct chart. See [Netdata charts](/docs/dashboards-and-charts/netdata-charts) and [Netdata Design](/docs/agent/netdata-design).
+
+- **A verified chart for every metric,** without building it.
+- **The same structure everywhere,** so what you learn on one system applies to all of them.
+- **Quality that does not depend on who is on call:** every engineer sees the same views.
+
+### Collect everything
+
+**Netdata collects everything that systems and applications expose, so the metric you did not know to monitor is already there.**
+
+Selecting what to collect ties the quality of your visibility to what someone thought of in advance. Netdata removes that dependency by discovering applications, containers and services and starting to collect.
+
+- **No blind spots:** during an incident, the data you need was already collected.
+- **Accurate sequencing:** the exact order of events across systems.
+- **Complete context for machine learning and AI,** which can only reason about what was collected.
+
+### Scale by adding Parents
+
+**Every Agent is a full observability node, and a larger fleet is the same architecture with more Parents.**
+
+An Agent collects, stores, queries, visualizes, runs machine learning and evaluates alerts on its own. Parents are the same software, centralizing the data of many Agents, and they form active-active clusters, so one Parent can be lost without losing the view. Adding Agents or Parents does not change the ones that exist. Each Parent cluster is an independent shard, so adding Parents adds capacity: about one Parent per 500 nodes, so 2,000 nodes run on 4 Parents and 20,000 on about 40 (see [Parent sizing guidelines](/docs/agent/scalability#parent-sizing-guidelines)). See also [Scalability](/docs/agent/scalability).
+
+- **No re-architecture as you grow:** the engine that runs on one node runs on a very large fleet.
+- **High availability without a separate product.**
+- **No separate database to run, tune or back up:** the time-series database is part of the Agent and Parent.
+
+### Missing data is data
+
+**When something cannot be collected on time, Netdata shows the gap, because the gap itself is information.**
+
+The same rule holds across the fleet: when a node does not answer a query, the dashboard still renders from every node that did and shows which are missing, so an incomplete answer is never presented as a complete one.
+
+- **Stress is visible** the moment it starts.
+- **Honest answers:** a fleet-wide result always says which sources it covers.
+
+### Alerts for every component
+
+**Pre-configured alerts watch every individual instance of the systems and applications Netdata detects.**
+
+Alerts are templates that apply to each database, web server, container and service as it appears, so new instances are covered automatically and an alert tells you which instance is failing. Conditions that matter but should not wake anyone are visible on the dashboard but do not send notifications by default. Every stock alert can be edited or disabled, and you can add your own, from the dashboard or in configuration files. See [notifications](/docs/agent/alerts-and-notifications/notifications) for the channels your team uses.
+
+- **Coverage from the start**, plus your own alerts where you need them.
+- **Early detection** of component failures before they become service outages.
+
+### Logs
+
+**Netdata handles logs in two ways, and neither needs a separate logging backend.**
+
+- **Logs monitoring** queries system logs in place, without moving them: systemd journal on Linux, event logs on Windows and the unified log on macOS, with every field filterable and live counters, in the same dashboard as the metrics.
+- **Logs ingestion** takes OpenTelemetry logs from any source and stores them locally, or offloads them to S3-compatible object storage. Every field is indexed and searchable.
+
+**Netdata indexes every log field, and stores ingested logs in a fraction of their raw size.**
+
+Log systems usually trade search power for storage. Indexing only streams keeps storage small but limits filtering. Indexing every word allows any search but needs several times the raw size. Netdata indexes every field, balancing storage cost and search efficiency.
+
+Traces arrive through the same OpenTelemetry pipeline, so one data model covers metrics, logs and traces. See [working with logs](/docs/agent/category-overview-pages/working-with-logs) and [OpenTelemetry](/docs/agent/category-overview-pages/opentelemetry).
+
+- **One place to look** when a metric, a log line and a trace tell parts of the same story.
+- **Logs stay under your control,** on your nodes or in your own object storage.
+
+### Open by design
+
+**Netdata works with the standards and tools you already use.**
+
+It ingests Prometheus, OpenTelemetry, Nagios plugins and StatsD, exports metrics to Prometheus, Graphite, OpenTSDB and other systems, and connects to AI assistants through its [MCP server](/docs/agent/netdata-ai/mcp). The Agent is open source, and your data is never locked in.
+
+## How the pieces fit
+
+**Every Agent is complete on its own, Parents add shared storage and fleet capacity, and Netdata Cloud ties them together.**
+
+```mermaid
+flowchart TB
+    C1("Agent (Child) 1")
+    C2("Agent (Child) 2")
+    C3("Agent (Child) 3")
+
+    P1("**Parent 1**")
+    P2("**Parent 2**")
+
+    NC("**Netdata Cloud**<br/>Dashboards, Alerts, AI")
+
+    C1 -->|streaming| P1
+    C2 -->|streaming| P1
+    C3 -->|streaming| P2
+    C2 -.->|failover| P2
+    P1 <-->|replication| P2
+    P1 <-->|ACLK| NC
+    P2 <-->|ACLK| NC
+
+    classDef child fill: #e8f5e8, stroke: #27ae60, stroke-width: 2px, color: #2c3e50, rx: 10, ry: 10
+    classDef parent fill: #f3e8ff, stroke: #9b59b6, stroke-width: 2px, color: #2c3e50, rx: 10, ry: 10
+    classDef cloud fill: #e8f4fd, stroke: #4a90e2, stroke-width: 2px, color: #2c3e50, rx: 10, ry: 10
+
+    class C1 child
+    class C2 child
+    class C3 child
+    class P1 parent
+    class P2 parent
+    class NC cloud
+```
+
+| Layer | What it does |
+|---|---|
+| [**Netdata Agent**](/guides/standalone-deployment) | The complete engine on every system: collection, storage, query engine, dashboard, machine learning and alerting. It works alone, with no other component. |
+| [**Netdata Parent**](/guides/deployment-with-centralization-points) | The same software, configured as a Parent. It receives streams from many Agents, stores their metrics, runs machine learning and alerts for them, and answers queries for them. Parents form active-active clusters. |
+| [**Netdata Cloud**](/docs/agent/netdata-cloud) | SaaS or On-Prem, including air-gapped. Routes each query to the Parents that hold the data, merges the results, and adds users, roles, notifications and AI. It is not in the data path. |
+
+## Who it is for
+
+**Netdata is for operations teams, sysadmins, DevOps and platform engineers and SREs, from a single team to an enterprise, who want complete visibility without having to build it.**
+
+**Netdata does what experienced engineers often consider impractical, because it is designed for it.**
+
+- **It collects everything, every second.** Collecting everything is usually too expensive, so teams have to choose what to watch, and during a crisis the data they need is often missing. Netdata stores data as close as possible to the systems that produce it, in compact databases, so complete coverage costs under 5% of one CPU core, about 200 MB of RAM and a few GB of disk per node, instead of a monitoring bill that rivals the infrastructure it monitors, and gives you the most complete picture when it matters most.
+- **It visualizes everything.** Usually every chart is built and maintained by hand, so dashboards cover only what someone thought of in advance, and large setups drift into hundreds of inconsistent dashboards nobody trusts. Netdata gives every metric its meaning at collection time and builds the dashboards from it, so every metric has a correct chart, organized the same way across every node, and nothing is missing when you go looking for it.
+- **It runs machine learning on every metric.** Netdata uses machine learning to model the behavior of the infrastructure and applications. During an incident, anomalies appear in clusters across related components, revealing dependencies that would otherwise go unnoticed and showing how problems cascade across systems, networks and applications. Netdata uses these clusters to rank what changed and gives them to its AI as context to reason about the cause. This is the basis of its automated root-cause analysis.
+- **It needs no specialized skills.** Observability usually depends on query languages and dashboard engineering, so troubleshooting waits for the few experts who know them. In Netdata, every engineer works with the same views and the same tools, with no query language to learn. Every engineer can investigate incidents on their own and learns the environment by seeing the whole picture.
+
+Netdata is full-stack observability: infrastructure, applications, networks, databases, logs and cloud. It is not a business-intelligence, SIEM, ITSM or data-warehouse platform; it can export metrics and forward logs and traces to the systems that are.
+
+## What you get on day one
+
+**Install an Agent and you get these, out of the box:**
+
+- **Discovery:** applications, containers and services are found and monitored automatically. See the [Complete Product Description](/docs/agent/netdata-complete-product-description).
+- **A verified chart for every metric,** organized in a table of contents that adapts to the data. See [Netdata charts](/docs/dashboards-and-charts/netdata-charts).
+- **Anomaly detection** on every metric. See [machine learning](/docs/agent/ml-ai/ml-anomaly-detection/ml-anomaly-detection).
+- **Pre-configured alerts** for systems and applications, with [notifications](/docs/agent/alerts-and-notifications/notifications) to the tools your team uses.
+- **Logs:** systemd journal, Windows event logs and macOS unified logs, explored in place, and OpenTelemetry logs ingested and stored locally or on S3. See [working with logs](/docs/agent/category-overview-pages/working-with-logs).
+- **OpenTelemetry metrics, logs and traces** through OTLP. See [OpenTelemetry](/docs/agent/category-overview-pages/opentelemetry).
+- **Live views:** processes, network connections, systemd units and more, through [Functions](/docs/agent/top-monitoring-netdata-functions).
+- **AI:** ask Netdata AI, or connect any AI assistant through the [MCP server](/docs/agent/netdata-ai/mcp).
+
+Custom dashboards are supported but optional: Netdata provides single-node, multi-node and fleet-level dashboards automatically.
+
+You can install Netdata during an incident: live per-second data and AI-assisted troubleshooting start immediately, and anomaly scores follow after about 15 minutes, once machine learning has built its first models.
+
+## What you still do
+
+**You decide where Netdata runs and who can see it; the rest is automatic.** Typically you:
+
+1. **Install Netdata Agents** on your Linux, Windows, FreeBSD and macOS servers and VMs, or on Kubernetes.
+2. Optionally, **dedicate machines to Parents** for shared storage, longer retention and high availability. See [Sizing](/docs/agent/scalability#parent-sizing-guidelines).
+3. **Provide credentials** to collectors that need them (databases, message brokers and other protected applications), and configure collection for custom applications and SNMP devices.
+4. **Review alerts** and set up your notification channels.
+5. **Choose retention** for your history tiers.
+6. **Invite colleagues,** with enterprise SSO (OpenID Connect, Okta) and SCIM v2, and assign roles.
+
+Netdata configurations are infrastructure-as-code friendly, and provisioning systems can automate deployment on large infrastructures. A complete Netdata deployment is usually achieved within a few days.
+
+## Get started
+
+1. **Install an Agent.** Use the [one-line installer](/docs/agent/packaging/installer/methods/kickstart) on Linux, or the [Windows](/docs/agent/packaging/windows/windows_installer), [macOS](/docs/agent/packaging/installer/methods/macos), [FreeBSD](/docs/agent/packaging/installer/methods/freebsd), [Docker](/docs/agent/packaging/docker) and [Kubernetes](/docs/agent/packaging/installer/methods/kubernetes) options.
+2. **Open the dashboard** at `http://localhost:19999`.
+3. **Connect to Netdata Cloud** for the fleet view. The [getting started guide](/docs/agent/getting-started-netdata/guide) walks through it.
+4. **Add Parents** when you want shared storage and high availability. See [deployment with centralization points](/guides/deployment-with-centralization-points).
+5. **Invite your team.** See [organize your nodes and invite your team](/docs/agent/netdata-cloud/organize-your-infrastructure-invite-your-team).
+
+**Read next:**
+
+| If you want to know | Read |
+|---|---|
+| Why Netdata is built this way | [Netdata Design](/docs/agent/netdata-design) |
+| Everything Netdata does | [Complete Product Description](/docs/agent/netdata-complete-product-description) |
+| How to size Agents and Parents | [Scalability](/docs/agent/scalability) and [Sizing Netdata Agents](/docs/agent/netdata-agent/sizing-netdata-agents) |
+| How high availability works | [Clustering and high availability of Parents](/docs/agent/observability-centralization-points/metrics-centralization-points/clustering-and-high-availability-of-netdata-parents) |
+| How Netdata handles security and privacy | [Security and privacy design](/docs/agent/security-and-privacy-design) |
+| How to evaluate Netdata for an enterprise | [Complete Product Description](/docs/agent/netdata-complete-product-description) |
+| Which features need a paid plan | [Access control and feature availability](/docs/agent/netdata-oss-limitations) |
+
+## Questions buyers ask
+
+### What does Netdata replace?
+
+Netdata is a complete, standalone observability platform: it covers collection, storage, dashboards, alerting and machine learning in one product.
+
+### Do I need to run anything besides Netdata?
+
+No. Agents work alone, and Parents are optional.
+
+### Can I run it without internet access?
+
+Yes. Agents and Parents run without internet access, and Netdata Cloud On-Prem, including air-gapped, brings the fleet view inside your network.
+
+### How long does a rollout take?
+
+A complete deployment is usually achieved within a few days; an Agent starts showing dashboards the moment it is installed.
+
+### Which operating systems does it support?
+
+Linux, Windows, macOS and FreeBSD, plus Docker and Kubernetes.

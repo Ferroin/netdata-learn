@@ -1,70 +1,125 @@
----
-title: "Install Netdata on macOS"
-custom_edit_url: https://github.com/netdata/netdata/edit/master/packaging/installer/methods/macos.md
----
 
 
+You can install Netdata in one of the three following ways:
 
-Netdata works on macOS, albeit with some limitations. 
-The number of charts displaying system metrics is limited, but you can use any of Netdata's [external plugins](/docs/agent/collectors/plugins.d) to monitor any services you might have installed on your macOS system. 
-You could also use a macOS system as the parent node in a [streaming configuration](/docs/agent/streaming).
-
-You can install Netdata in one of the three following ways: 
-
-- **[Install Netdata with the our automatic one-line installation script (recommended)](#install-netdata-with-our-automatic-one-line-installation-script)**, 
+- **[Install Netdata with the automatic one-line installation script (recommended)](#install-netdata-with-our-automatic-one-line-installation-script)**,
 - [Install Netdata via Homebrew](#install-netdata-via-homebrew)
 - [Install Netdata from source](#install-netdata-from-source)
 
-Each of these installation option requires [Homebrew](https://brew.sh/) for handling dependencies. 
+Each of these installation option requires [Homebrew](https://brew.sh/) for handling dependencies.
 
-> The Netdata Homebrew package is community-created and -maintained.
-> Community-maintained packages _may_ receive support from Netdata, but are only a best-effort affair. Learn more about [Netdata's platform support policy](/docs/agent/packaging/platform_support).
+:::info
+
+The Netdata Homebrew package is community-created and -maintained.
+
+:::
+
+:::note
+
+Community-maintained packages _may_ receive support from Netdata, but are only a best-effort affair. Learn more about [Netdata's platform support policy](/docs/agent/packaging/platform_support).
+
+:::
 
 ## Install Netdata with our automatic one-line installation script
 
-**Local Netdata Agent installation**
-To install Netdata using our automatic [kickstart](/docs/agent/packaging/installer#automatic-one-line-installation-script) open a new terminal and run:
+### Local Netdata Agent installation
+
+To install Netdata using our automatic [kickstart](/docs/agent/packaging/installer/methods/kickstart) open a new terminal and run:
 
 ```bash
-curl https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh && sh /tmp/netdata-kickstart.sh
+curl https://get.netdata.cloud/kickstart.sh > /tmp/netdata-kickstart.sh && sh /tmp/netdata-kickstart.sh
 ```
-The Netdata Agent is be installed under `/usr/local/netdata`. Dependencies are handled via Homebrew.
 
-**Automatically connect to Netdata Cloud during installation**
-<!-- Potential reuse: https://learn.netdata.cloud/docs/agent/claim#connect-an-agent-running-in-macos-->
-<!--Potential reuse https://learn.netdata.cloud/docs/agent/packaging/installer/methods/kickstart#connect-node-to-netdata-cloud-during-installation The following information is copied from this link.-->
+The Netdata Agent is installed under `/usr/local/netdata`. Dependencies are handled via Homebrew.
 
-The `kickstart.sh` script accepts additional parameters to automatically [connect](/docs/agent/claim) your node to Netdata
+### Automatically connect to Netdata Cloud during installation
+
+The `kickstart.sh` script accepts additional parameters to automatically [connect](/docs/agent/src/claim) your node to Netdata
 Cloud immediately after installation. Find the `token` and `rooms` strings by [signing in to Netdata
-Cloud](https://app.netdata.cloud/sign-in?cloudRoute=/spaces), then clicking on **Connect Nodes** in the [Spaces management
-area](/docs/cloud/spaces#manage-spaces).
+Cloud](https://app.netdata.cloud/sign-in?cloudRoute=/spaces), then clicking on **Connect Nodes** on any of the prompts from the UI.
 
 - `--claim-token`: Specify a unique claiming token associated with your Space in Netdata Cloud to be used to connect to the node
   after the install.
-- `--claim-rooms`: Specify a comma-separated list of tokens for each War Room this node should appear in.
-- `--claim-proxy`: Specify a proxy to use when connecting to the cloud in the form of `http://[user:pass@]host:ip` for an HTTP(S) proxy.
-  See [connecting through a proxy](/docs/agent/claim#connect-through-a-proxy) for details.
-- `--claim-url`: Specify a URL to use when connecting to the cloud. Defaults to `https://app.netdata.cloud`.
+- `--claim-rooms`: Specify a comma-separated list of tokens for each Room this node should appear in.
+- `--claim-proxy`: Specify a proxy to use when connecting to the Cloud in the form of `http://[user:pass@]host:ip` for an HTTP(S) proxy.
+  See [connecting through a proxy](/docs/agent/src/claim#proxy-configuration) for details.
+- `--claim-url`: Specify a URL to use when connecting to the Cloud. Defaults to `https://app.netdata.cloud`.
 
-For example: 
+For example:
+
 ```bash
-curl https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh && sh /tmp/netdata-kickstart.sh --install /usr/local/ --claim-token TOKEN --claim-rooms ROOM1,ROOM2 --claim-url https://app.netdata.cloud
+curl https://get.netdata.cloud/kickstart.sh > /tmp/netdata-kickstart.sh && sh /tmp/netdata-kickstart.sh --install-prefix /usr/local/ --claim-token TOKEN --claim-rooms ROOM1,ROOM2 --claim-url https://app.netdata.cloud
 ```
+
 The Netdata Agent is installed under `/usr/local/netdata` on your machine. Your machine will also show up as a node in your Netdata Cloud.
 
-If you experience issues while claiming your node, follow the steps in our [Troubleshooting](/docs/agent/claim#troubleshooting) documentation.
+If you experience issues while connecting your node, follow the steps in our [Troubleshoot](/docs/agent/src/claim#troubleshooting) documentation.
+
 ## Install Netdata via Homebrew
 
-To install Netdata and all its dependencies, run Homebrew using the following command: 
+To connect this Agent to Netdata Cloud, see [Connect a Homebrew-installed Agent to Netdata Cloud](#connect-a-homebrew-installed-agent-to-netdata-cloud) below.
+
+### For macOS Intel
+
+To install Netdata and all its dependencies, run Homebrew using the following command:
 
 ```sh
 brew install netdata
 ```
-Homebrew will place your Netdata configuration directory at `/usr/local/etc/netdata/`. 
+
+Homebrew will place your Netdata configuration directory at `/usr/local/etc/netdata/`.
 
 Use the `edit-config` script and the files in this directory to configure Netdata. For reference, you can find stock configuration files at `/usr/local/Cellar/netdata/{NETDATA_VERSION}/lib/netdata/conf.d/`.
 
-Skip on ahead to the [What's next?](#whats-next) section to find links to helpful post-installation guides.
+### For Apple Silicon
+
+To install Netdata and all its dependencies, run Homebrew using the following command:
+
+```sh
+brew install netdata
+```
+
+Homebrew will place your Netdata configuration directory at `/opt/homebrew/etc/netdata/`.
+
+Use the `edit-config` script and the files in this directory to configure Netdata. For reference, you can find stock configuration files at `/opt/homebrew/Cellar/netdata/{NETDATA_VERSION}/lib/netdata/conf.d/`.
+
+### Start the Netdata Agent
+
+Homebrew installs Netdata but does not start the Agent automatically, so the local dashboard at `http://localhost:19999` is not available until you start it yourself. See [macOS (Homebrew)](/docs/agent/netdata-agent/start-stop-restart#macos-homebrew) for the `brew services` commands to start, stop, restart, and check the status of the Agent.
+
+### Connect a Homebrew-installed Agent to Netdata Cloud
+
+The easiest way to connect a Homebrew-installed Netdata Agent to Netdata Cloud is via the local dashboard UI, as described in [Method 1: Via UI](/docs/agent/src/claim#method-1-via-ui-recommended):
+
+1. Open the local dashboard in your browser at `http://localhost:19999` (or the Agent's IP address at port 19999). The Agent must be running first; if you haven't started it yet, see [Start the Netdata Agent](#start-the-netdata-agent) above.
+2. Sign in to your Netdata Cloud account.
+3. Click the **Connect** button and follow the on-screen instructions.
+
+For automated setups or headless machines where the UI is not accessible, you can use one of these alternatives:
+
+- **Kickstart script claiming flags** — this requires installing/reinstalling with kickstart (it installs under `/usr/local/netdata` by default, or your `--install-prefix` path) rather than adding flags to an existing Homebrew install. If you want to keep the Homebrew install, use the **Configuration file** method below. See the [kickstart claiming section](#automatically-connect-to-netdata-cloud-during-installation) above or the full [kickstart documentation](/docs/agent/packaging/installer/methods/kickstart).
+- **Configuration file** — create a `claim.conf` file in your Netdata configuration directory using the [configuration file method](/docs/agent/src/claim#method-2-via-configuration-file).
+
+**Configuration directory paths for `claim.conf`:**
+
+| Architecture  | Path                                   |
+|:--------------|:---------------------------------------|
+| Intel         | `/usr/local/etc/netdata/claim.conf`    |
+| Apple Silicon | `/opt/homebrew/etc/netdata/claim.conf` |
+
+:::note
+
+On macOS, Homebrew installs run under your user account and the `netdata` group does not exist. Use your own user and the `staff` group for file ownership when creating `claim.conf` manually. For full details on permissions and applying the configuration, see the [configuration file method](/docs/agent/src/claim#method-2-via-configuration-file).
+
+:::
+
+:::caution
+
+Do **not** run the `netdata-claim.sh` script manually. It is deprecated and will be unsupported in the near future. Instead, use one of the supported claiming methods described above: the Cloud UI, kickstart claiming flags during install/reinstall, or a `claim.conf` file.
+
+:::
+
+For the full list of claiming options and troubleshooting, see [Connect Agent to Cloud](/docs/agent/src/claim).
 
 ## Install Netdata from source
 
@@ -76,13 +131,15 @@ We don't recommend installing Netdata from source on macOS, as it can be difficu
    xcode-select --install
    ```
 
-2. Click **Install** on the Software Update popup window that appears. 
-3. Use the same terminal session to install some of Netdata's prerequisites using Homebrew. If you don't want to use [Netdata Cloud](/docs/cloud/), you can omit `cmake`.
+2. Click **Install** on the Software Update popup window that appears.
+3. Use the same terminal session to install some of Netdata's prerequisites using Homebrew. If you don't want to use [Netdata Cloud](/docs/agent/netdata-cloud), you can omit `cmake`.
 
    ```bash
    brew install ossp-uuid autoconf automake pkg-config libuv lz4 json-c openssl libtool cmake
    ```
-   
+
+   To include the OpenTelemetry plugin (`otel-plugin`), also install a Rust toolchain — either `brew install rust` or a stable toolchain via [rustup](https://rustup.rs/). The plugin is built automatically when a toolchain covering the minimum version (`rust-version` in `src/crates/Cargo.toml`) is available; without one, the installer prints a warning and builds the agent without the plugin.
+
 4. Download Netdata from our GitHub repository:
 
    ```bash
@@ -93,19 +150,19 @@ We don't recommend installing Netdata from source on macOS, as it can be difficu
 
    ```bash
    cd netdata/
-   sudo ./netdata-installer.sh --install /usr/local
+   sudo ./netdata-installer.sh --install-prefix /usr/local
    ```
 
-> Your Netdata configuration directory will be at `/usr/local/netdata/`. 
-> Your stock configuration directory will be at `/usr/local/lib/netdata/conf.d/`.
-> The installer will also install a startup plist to start Netdata when your macOS system boots.
+:::info
 
-## What's next?
+- Your Netdata configuration directory will be at `/usr/local/netdata/`.
+- Your stock configuration directory will be at `/usr/local/lib/netdata/conf.d/`.
+- The installer will also install a startup plist to start Netdata when your macOS system boots.
 
-When you're finished with installation, check out our [single-node](/docs/quickstart/single-node) or
-[infrastructure](/docs/quickstart/infrastructure) monitoring quickstart guides based on your use case.
+:::
 
-Or, skip straight to [configuring the Netdata Agent](/docs/configure/nodes).
+Netdata works on macOS, albeit with some limitations.
 
-
-
+- The number of charts displaying system metrics is limited, but you can use any of Netdata's [external plugins](/docs/agent/src/plugins.d) to monitor any services you might have installed on your macOS system.
+- You could also use a macOS system as the parent node in a [streaming configuration](/docs/agent/src/streaming).
+- The OpenTelemetry plugin (`otel-plugin`) is built by default when a Rust toolchain is available, so a macOS node can also ingest OTLP metrics and logs.

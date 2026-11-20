@@ -1,108 +1,134 @@
----
-title: "Install Netdata on FreeBSD"
-description: "Install Netdata on FreeBSD to monitor the health and performance of bare metal or VMs with thousands of real-time, per-second metrics."
-custom_edit_url: https://github.com/netdata/netdata/edit/master/packaging/installer/methods/freebsd.md
----
 
 
+:::info
 
-> 💡 This document is maintained by Netdata's community, and may not be completely up-to-date. Please double-check the
-> details of the installation process, such as version numbers for downloadable packages, before proceeding.
->
-> You can help improve this document by [submitting a
-> PR](https://github.com/netdata/netdata/edit/master/packaging/installer/methods/freebsd.md) with your recommended
-> improvements or changes. Thank you!
+This guide is community-maintained and might not always reflect the latest details (like package versions). Double-check before proceeding! Want to help? [Submit a PR!](https://github.com/netdata/netdata/edit/master/packaging/installer/methods/freebsd.md)
 
-## Install latest version
+:::
 
-This is how to install the latest Netdata version on FreeBSD:
+## 1. Install dependencies
 
-Install required packages (**need root permission**):
+Run as `root`:
 
-```sh
-pkg install bash e2fsprogs-libuuid git curl autoconf automake pkgconf pidof Judy liblz4 libuv json-c cmake gmake
+```bash
+pkg install bash e2fsprogs-libuuid git curl autoconf automake pkgconf pidof liblz4 libuv json-c cmake gmake
 ```
 
-Download Netdata:
+Approve any prompts that appear.
 
-```sh
-fetch https://github.com/netdata/netdata/releases/download/v1.26.0/netdata-v1.26.0.tar.gz
+## 2. Choose an Installation Method
+
+<details>
+<summary><strong>Option A: Kickstart Installer (Recommended)</strong></summary>
+
+The simplest approach is to use our one-line [kickstart installer](/docs/agent/packaging/installer/methods/kickstart).
+
+- Prepare the installation command:
+    - For Netdata Cloud users: Navigate to your Space, click **Add Nodes** → Copy the command from the "Linux" tab.
+    - For standalone installation, use the example below.
+
+- Run the installation command:
+   ```bash
+   wget -O /tmp/netdata-kickstart.sh https://get.netdata.cloud/kickstart.sh && sh /tmp/netdata-kickstart.sh --claim-token <YOUR_TOKEN> --claim-url https://app.netdata.cloud
+   ```
+
+:::note
+
+Replace `<YOUR_TOKEN>` with your actual claim token.
+
+:::
+
+- After installation, access your Netdata dashboard at:
+
+   ```
+   http://NODE:19999
+   ```
+
+  (`NODE` = your FreeBSD machine's hostname or IP)
+
+</details>
+
+### Option B: FreeBSD Ports Installation
+
+Netdata is also available through the FreeBSD Ports collection:
+
+https://www.freshports.org/net-mgmt/netdata/
+
+<details>
+<summary><strong>Option C: Manual Installation (For Advanced Users)</strong></summary>
+
+- Download the latest Netdata release:
+
+   ```bash
+   fetch https://github.com/netdata/netdata/releases/latest/download/netdata-latest.tar.gz
+   ```
+
+  Or download a specific version:
+
+   ```bash
+   fetch https://github.com/netdata/netdata/releases/download/v2.3.2/netdata-v2.3.2.tar.gz
+   ```
+
+- Extract the downloaded archive:
+
+   ```bash
+   tar -xzf netdata*.tar.gz && rm netdata*.tar.gz
+   ```
+
+- Install Netdata to `/opt/netdata`:
+
+   ```bash
+   cd netdata-v*
+   ./netdata-installer.sh --install-prefix /opt
+   ```
+
+- Configure Netdata to start automatically at boot:
+
+   ```bash
+   sysrc netdata_enable="YES"
+   ```
+
+- Start the Netdata service:
+
+   ```bash
+   service netdata start
+   ```
+
+</details>
+
+## 3. Updating Netdata Installation
+
+If you enabled auto-updates with `--auto-update`, no further action is needed.
+
+For manual updates:
+
+```bash
+cd /opt/netdata/usr/libexec/netdata/
+./netdata-updater.sh
 ```
 
-> ⚠️ Verify the latest version by either navigating to [Netdata's latest
-> release](https://github.com/netdata/netdata/releases/latest) or using `curl`:
->
-> ```bash
-> basename $(curl -Ls -o /dev/null -w %{url_effective} https://github.com/netdata/netdata/releases/latest)
-> ```
+## Optional Kickstart Parameters
 
-Unzip the downloaded file:
+| Option                                               | Description                                                                                                |
+|------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| `--non-interactive`                                  | Skip prompts and assume yes.                                                                               |
+| `--interactive`                                      | Force interactive prompts.                                                                                 |
+| `--release-channel stable`                           | Install stable builds (instead of nightly).                                                                |
+| `--no-updates`                                       | Disable auto-updates.                                                                                      |
+| `--disable-telemetry`                                | Disable anonymous statistics.                                                                              |
+| `--native-only`                                      | Install only if native packages are available.                                                             |
+| `--static-only`                                      | Install only if static builds are available.                                                               |
+| `--install-prefix /opt`                              | Change installation directory.                                                                             |
+| `--prepare-offline-install-source ./netdata-offline` | Prepare offline installation source. See [Offline Install Guide](/docs/agent/packaging/installer/methods/offline). |
 
-```sh
-gunzip netdata*.tar.gz && tar xf netdata*.tar && rm -rf netdata*.tar
-```
+## Environment Variables (Advanced Users)
 
-Install Netdata in `/opt/netdata`. If you want to enable automatic updates, add `--auto-update` or `-u` to install `netdata-updater` in `cron` (**need root permission**):
+| Variable              | Purpose                                                            |
+|-----------------------|--------------------------------------------------------------------|
+| `TMPDIR`              | Directory for temporary files.                                     |
+| `ROOTCMD`             | Command used for privilege escalation (default: `sudo` or `doas`). |
+| `DISABLE_TELEMETRY=1` | Disables anonymous telemetry data.                                 |
 
-```sh
-cd netdata-v* && ./netdata-installer.sh --install /opt && cp /opt/netdata/usr/sbin/netdata-claim.sh /usr/sbin/
-```
+## Telemetry Notice
 
-You also need to enable the `netdata` service in `/etc/rc.conf`:
-
-```sh
-sysrc netdata_enable="YES"
-```
-
-Finally, and very importantly, update Netdata using the script provided by the Netdata team (**need root permission**):
-
-```sh
-cd /opt/netdata/usr/libexec/netdata/ && ./netdata-updater.sh
-```
-
-You can now access the Netdata dashboard by navigating to `http://NODE:19999`, replacing `NODE` with the IP address or hostname of your system.
-
-![image](https://user-images.githubusercontent.com/2662304/48304090-fd384080-e51b-11e8-80ae-eecb03118dda.png)
-
-Starting with v1.30, Netdata collects anonymous usage information by default and sends it to a self hosted PostHog instance within the Netdata infrastructure. To read
-more about the information collected and how to opt-out, check the [anonymous statistics
-page](/docs/agent/anonymous-statistics).
-
-## Updating the Agent on FreeBSD
-If you have not passed the `--auto-update` or `-u` parameter for the installer to enable automatic updating, repeat the last step to update Netdata whenever a new version becomes available. 
-The `netdata-updater.sh` script will update your Agent.
-
-## Optional parameters to alter your installation
-| parameters | Description |
-|:-----:|-----------|
-|`--install <path>`| Install netdata in `<path>.` Ex: `--install /opt` will put netdata in `/opt/netdata`|
-| `--dont-start-it` | Do not (re)start netdata after installation|
-| `--dont-wait` | Run installation in non-interactive mode|
-| `--auto-update` or `-u` | Install netdata-updater in cron to update netdata automatically once per day|
-| `--stable-channel` | Use packages from GitHub release pages instead of GCS (nightly updates). This results in less frequent updates|
-| `--nightly-channel` | Use most recent nightly updates instead of GitHub releases. This results in more frequent updates|
-| `--disable-go` | Disable installation of go.d.plugin|
-| `--disable-ebpf` | Disable eBPF Kernel plugin (Default: enabled)|
-| `--disable-cloud` | Disable all Netdata Cloud functionality|
-| `--require-cloud` | Fail the install if it can't build Netdata Cloud support|
-| `--enable-plugin-freeipmi` | Enable the FreeIPMI plugin. Default: enable it when libipmimonitoring is available|
-| `--disable-plugin-freeipmi` | Enable the FreeIPMI plugin|
-| `--disable-https` | Explicitly disable TLS support|
-| `--disable-dbengine` | Explicitly disable DB engine support|
-| `--enable-plugin-nfacct` | Enable nfacct plugin. Default: enable it when libmnl and libnetfilter_acct are available|
-| `--disable-plugin-nfacct` | Disable nfacct plugin. Default: enable it when libmnl and libnetfilter_acct are available|
-| `--enable-plugin-xenstat` | Enable the xenstat plugin. Default: enable it when libxenstat and libyajl are available|
-| `--disable-plugin-xenstat` | Disable the xenstat plugin|
-| `--enable-backend-kinesis` | Enable AWS Kinesis backend. Default: enable it when libaws_cpp_sdk_kinesis and libraries (it depends on are available)|                           
-| `--disable-backend-kinesis` | Disable AWS Kinesis backend. Default: enable it when libaws_cpp_sdk_kinesis and libraries (it depends on are available)|
-| `--enable-backend-prometheus-remote-write` | Enable Prometheus remote write backend. Default: enable it when libprotobuf and libsnappy are available|
-| `--disable-backend-prometheus-remote-write` | Disable Prometheus remote write backend. Default: enable it when libprotobuf and libsnappy are available|
-| `--enable-backend-mongodb` | Enable MongoDB backend. Default: enable it when libmongoc is available|
-| `--disable-backend-mongodb` | Disable MongoDB backend|
-| `--enable-lto` | Enable Link-Time-Optimization. Default: enabled|
-| `--disable-lto` | Disable Link-Time-Optimization. Default: enabled|
-| `--disable-x86-sse` | Disable SSE instructions. By default SSE optimizations are enabled|
-| `--zlib-is-really-here` or `--libs-are-really-here` | If you get errors about missing zlib or libuuid but you know it is available, you might have a broken pkg-config. Use this option to proceed without checking pkg-config|
-|`--disable-telemetry` | Use this flag to opt-out from our anonymous telemetry program. (DISABLE_TELEMETRY=1)|
-
-
+Anonymous usage data is collected by default. You can learn more or opt-out [here](/docs/agent/netdata-agent/configuration/anonymous-telemetry-events).

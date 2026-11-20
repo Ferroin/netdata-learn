@@ -1,9 +1,20 @@
 ---
 title: "Service discovery"
-custom_edit_url: https://github.com/netdata/agent-service-discovery/edit/master/README.md
+custom_edit_url: "https://github.com/netdata/agent-service-discovery/edit/master/README.md"
+sidebar_label: "Service discovery"
+learn_status: "Published"
+learn_rel_path: "Integrations/Monitor/Anything"
+sidebar_position: 300
 ---
 
 
+
+> [!WARNING]
+>
+> **Deprecation Notice**: This repository's service discovery functionality has been migrated to go.d.plugin in the main [Netdata repository](https://github.com/netdata/netdata). All future development, maintenance, and updates will continue there.
+
+<details>
+<summary>Old readme</summary>
 
 Service discovery extracts all the potentially useful information from different sources, converts it to the
 configurations and exports them to the different destinations.
@@ -12,10 +23,12 @@ configurations and exports them to the different destinations.
 
 The service discovery pipeline has four jobs:
 
-- [discovery](#discovery): dynamically discovers targets.
-- [tag](#tag): tags discovered targets.
-- [build](#build): creates configuration files from the targets.
-- [export](#export): exports configurations.
+|           Job           | Description                                                                                                                                                                     |
+|:-----------------------:|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [discovery](#discovery) | Dynamically discovers monitoring targets by collecting events from kubernetes API server. It collects POD and SERVICE events.                                                   |
+|       [tag](#tag)       | Dynamically add tags to discovered monitoring targets. Based on the POD and SERVICE fields and using patterns on them, one or more tags are attached to the monitoring targets. |
+|     [build](#build)     | Dynamically creates data collection configurations for the monitored targets, using templates.                                                                                  |
+|    [export](#export)    | Dynamically exports data collection configurations to allow netdata data collection plugins to use them. Data collection jobs in netdata are created and destroyed as needed.   |
 
 Routing in a job and between jobs based on `tags` and `selector`.
 
@@ -44,7 +57,7 @@ Tags special cases:
 
 Selectors special cases:
 
-- `!word`: should not contain the word.
+- `!word`: shouldn’t contain the word.
 - `word|word|word`: should contain any word.
 
 ## Discovery
@@ -67,7 +80,7 @@ k8s:
 Kubernetes discoverer retrieves targets from [Kubernetes'](https://kubernetes.io/)
 [REST API](https://kubernetes.io/docs/reference/). It always stays synchronized with the cluster state.
 
-Kubernetes discovery configuration options:
+Configuration options:
 
 ```yaml
 # Mandatory. Tags to add to all discovered targets.
@@ -98,22 +111,24 @@ and `PortProtocol` fields.
 
 Available pod target fields:
 
-| Name           | Type              | Value                                                     |
-| :------------- | :---------------- | :-------------------------------------------------------- |
-| `TUID`         | string            | `Namespace_Name_ContName_PortProtocol_Port`               |
-| `Address`      | string            | `PodIP:Port`                                              |
-| `Namespace`    | string            | _pod.metadata.namespace_                                  |
-| `Name`         | string            | _pod.metadata.name_                                       |
-| `Annotations`  | map[string]string | _pod.metadata.annotations_                                |
-| `Labels`       | map[string]string | _pod.metadata.labels_                                     |
-| `NodeName`     | string            | _pod.spec.nodeName_                                       |
-| `PodIP`        | string            | _pod.status.podIP_                                        |
-| `ContName`     | string            | _pod.spec.containers.name_                                |
-| `Image`        | string            | _pod.spec.containers.image_                               |
-| `Env`          | map[string]string | _pod.spec.containers.env_ + _pod.spec.containers.envFrom_ |
-| `Port`         | string            | _pod.spec.containers.ports.containerPort_                 |
-| `PortName`     | string            | _pod.spec.containers.ports.name_                          |
-| `PortProtocol` | string            | _pod.spec.containers.ports.protocol_                      |
+| Name             | Type              | Value                                                     |
+|:-----------------|:------------------|:----------------------------------------------------------|
+| `TUID`           | string            | `Namespace_Name_ContName_PortProtocol_Port`               |
+| `Address`        | string            | `PodIP:Port`                                              |
+| `Namespace`      | string            | _pod.metadata.namespace_                                  |
+| `Name`           | string            | _pod.metadata.name_                                       |
+| `Annotations`    | map[string]string | _pod.metadata.annotations_                                |
+| `Labels`         | map[string]string | _pod.metadata.labels_                                     |
+| `NodeName`       | string            | _pod.spec.nodeName_                                       |
+| `PodIP`          | string            | _pod.status.podIP_                                        |
+| `ControllerName` | string            | _pod.OwnerReferences.Controller.Name_                     |
+| `ControllerKind` | string            | _pod.OwnerReferences.Controller.Kind_                     |
+| `ContName`       | string            | _pod.spec.containers.name_                                |
+| `Image`          | string            | _pod.spec.containers.image_                               |
+| `Env`            | map[string]string | _pod.spec.containers.env_ + _pod.spec.containers.envFrom_ |
+| `Port`           | string            | _pod.spec.containers.ports.containerPort_                 |
+| `PortName`       | string            | _pod.spec.containers.ports.name_                          |
+| `PortProtocol`   | string            | _pod.spec.containers.ports.protocol_                      |
 
 #### Service Role
 
@@ -121,20 +136,20 @@ The service role discovers a target for each service port for each service.
 
 Available service target fields:
 
-| Name           | Type              | Value                                                     |
-| :------------- | :---------------- | :-------------------------------------------------------- |
-| `TUID`         | string            | `Namespace_Name_PortProtocol_Port`                        |
-| `Address`      | string            | `Name.Namespace.svc:Port`                                              |
-| `Namespace`    | string            | _svc.metadata.namespace_                                  |
-| `Name`         | string            | _svc.metadata.name_                                       |
-| `Annotations`  | map[string]string | _svc.metadata.annotations_                                |
-| `Labels`       | map[string]string | _svc.metadata.labels_                                     |
-| `Port`         | string            | _pod.spec.containers.ports.containerPort_                 |
-| `PortName`     | string            | _pod.spec.containers.ports.name_                          |
-| `PortProtocol` | string            | _pod.spec.containers.ports.protocol_                      |
-| `ClusterIP`    | string            | _svc.spec.clusterIP_                                      |
-| `ExternalName` | string            | _svc.spec.externalName_                                   |
-| `Type`         | string            | _svc.spec.ports.type_                                     |
+| Name           | Type              | Value                                     |
+|:---------------|:------------------|:------------------------------------------|
+| `TUID`         | string            | `Namespace_Name_PortProtocol_Port`        |
+| `Address`      | string            | `Name.Namespace.svc:Port`                 |
+| `Namespace`    | string            | _svc.metadata.namespace_                  |
+| `Name`         | string            | _svc.metadata.name_                       |
+| `Annotations`  | map[string]string | _svc.metadata.annotations_                |
+| `Labels`       | map[string]string | _svc.metadata.labels_                     |
+| `Port`         | string            | _pod.spec.containers.ports.containerPort_ |
+| `PortName`     | string            | _pod.spec.containers.ports.name_          |
+| `PortProtocol` | string            | _pod.spec.containers.ports.protocol_      |
+| `ClusterIP`    | string            | _svc.spec.clusterIP_                      |
+| `ExternalName` | string            | _svc.spec.externalName_                   |
+| `Type`         | string            | _svc.spec.ports.type_                     |
 
 ## Tag
 
@@ -280,3 +295,5 @@ Application Options:
 Help Options:
   -h, --help         Show this help message
 ```
+
+</details>

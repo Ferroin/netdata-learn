@@ -1,0 +1,63 @@
+
+
+> This query is available as `percentage-of-samples`, and as `countif`, its
+> historical name.
+
+It returns the percentage (0 to 100) of the samples in the time-frame that
+satisfied a condition.
+
+The condition is an operator followed by a value, given in the
+`group_options` query parameter:
+
+| operator | meaning |
+|---|---|
+| `!` or `!=` or `!:` or `<>` | different from |
+| `=` or `==` or `:` | equal to (also what a bare value means) |
+| `>` | greater than |
+| `>=` or `>:` | greater than or equal to |
+| `<` | less than |
+| `<=` or `<:` | less than or equal to |
+
+The value is one of:
+
+- a **number**, e.g. `!0` matches anything except zero, `>=-3` matches
+  anything from -3 upwards.
+- a **gap token** - `gap`, `nan`, `null` or `empty` are synonyms for "no data
+  was collected here". `==gap` matches the uncollected slots and `!=gap` the
+  collected ones. Naming a gap token is what makes gaps count at all;
+  without one they are invisible to `percentage-of-samples`,
+  `number-of-flaps` and `number-of-times`. `percentage-of-time` always
+  includes uncollected time in its denominator, while only a condition naming
+  a gap can match it.
+- the **previous collected sample** - `previous` or `last`, e.g. `<previous`
+  matches every sample lower than the one before it, which is what counts
+  counter resets. Gaps are skipped, so a drop across a gap still counts, and
+  the first sample of a query never matches.
+
+An omitted, empty or whitespace-only condition means `==0`. An operator
+without a value applies to zero, so `>` is shorthand for `>0`.
+
+There are no `and`/`or` compounds. An unreadable condition fails the query
+with HTTP 400 rather than silently changing what was asked. The same grammar is used by `percentage-of-time`,
+`number-of-flaps` and `number-of-times`, and by the `lookup` line of an
+[alert](/docs/agent/src/health/reference).
+
+Over a window long enough to be served from lower-resolution data this
+grouping evaluates each STORED point as one sample, rather than reasoning
+about the samples behind it. `percentage-of-time`, `number-of-flaps` and
+`number-of-times` estimate across stored windows; the counting groupings can
+report at most one event per stored interval. See
+[Accuracy over long windows](/docs/agent/src/web/api/queries#accuracy-over-long-windows).
+
+## How to use
+
+CountIf can be used in APIs and badges, and in health lookup expressions.
+
+`countif` is an alias of `percentage-of-samples`, which is the canonical name; both behave identically and report `%` units.
+For example, an alert may use `lookup: percentage-of-samples(>10) -5m`.
+
+For a non-empty group, `countif` returns the percentage of database points that matched the condition, from zero to 100.
+For example, with one or more observed values, the health lookup `countif(!=1) -15m unaligned of value` returns zero only
+when every observed value in the 15-minute lookup is exactly `1`.
+
+In APIs and badges, use `&group=countif&group_options=>10` in the URL.
